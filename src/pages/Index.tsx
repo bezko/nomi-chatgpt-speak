@@ -1,29 +1,34 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, Send, Activity, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, Send, Activity, CheckCircle2, XCircle, Zap } from "lucide-react";
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
+interface TestLog {
   timestamp: string;
+  nomiMessage: string;
+  question: string | null;
+  answer?: string;
+  success: boolean;
+  error?: string;
 }
 
 const Index = () => {
-  const [message, setMessage] = useState("");
+  const [nomiMessage, setNomiMessage] = useState('/ask chatgpt "What is the capital of France?"');
+  const [nomiUuid, setNomiUuid] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [logs, setLogs] = useState<TestLog[]>([]);
   const [apiStatus, setApiStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const { toast } = useToast();
 
-  const handleSendMessage = async () => {
-    if (!message.trim()) {
+  const handleTestWebhook = async () => {
+    if (!nomiMessage.trim() || !nomiUuid.trim()) {
       toast({
-        title: "Empty message",
-        description: "Please enter a message to send",
+        title: "Missing fields",
+        description: "Please enter both Nomi message and UUID",
         variant: "destructive",
       });
       return;
@@ -33,49 +38,56 @@ const Index = () => {
     setApiStatus('idle');
 
     try {
-      // Add user message to history
-      const userMessage: Message = {
-        role: 'user',
-        content: message,
-        timestamp: new Date().toISOString()
-      };
-      setMessages(prev => [...prev, userMessage]);
-
-      // Call the bridge function
       const { data, error } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
         body: {
-          message: message,
-          conversationHistory: messages.map(m => ({
-            role: m.role,
-            content: m.content
-          }))
+          nomiMessage: nomiMessage,
+          nomiUuid: nomiUuid
         }
       });
 
       if (error) throw error;
 
-      // Add assistant response to history
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: data.reply,
-        timestamp: data.timestamp
+      const log: TestLog = {
+        timestamp: new Date().toISOString(),
+        nomiMessage,
+        question: data.question || null,
+        answer: data.answer,
+        success: data.success || false,
+        error: data.error
       };
-      setMessages(prev => [...prev, assistantMessage]);
-      setApiStatus('success');
 
-      toast({
-        title: "Success",
-        description: "Message sent to ChatGPT",
-      });
+      setLogs(prev => [log, ...prev]);
+      setApiStatus(data.success ? 'success' : 'error');
 
-      setMessage("");
+      if (data.success) {
+        toast({
+          title: "Success!",
+          description: "Message processed and reply sent to Nomi",
+        });
+      } else if (data.ignored) {
+        toast({
+          title: "Message Ignored",
+          description: "Message doesn't match /ask chatgpt format",
+        });
+      }
 
     } catch (error: any) {
       console.error('Error:', error);
       setApiStatus('error');
+      
+      const log: TestLog = {
+        timestamp: new Date().toISOString(),
+        nomiMessage,
+        question: null,
+        success: false,
+        error: error.message
+      };
+      
+      setLogs(prev => [log, ...prev]);
+      
       toast({
         title: "Error",
-        description: error.message || "Failed to send message",
+        description: error.message || "Failed to process message",
         variant: "destructive",
       });
     } finally {
@@ -85,8 +97,8 @@ const Index = () => {
 
   const getStatusColor = () => {
     switch (apiStatus) {
-      case 'success': return 'text-green-500';
-      case 'error': return 'text-red-500';
+      case 'success': return 'text-success';
+      case 'error': return 'text-destructive';
       default: return 'text-muted-foreground';
     }
   };
@@ -104,10 +116,13 @@ const Index = () => {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            Nomi ↔ ChatGPT Bridge
-          </h1>
-          <p className="text-muted-foreground">Connect your Nomi character with ChatGPT</p>
+          <div className="flex items-center justify-center gap-2">
+            <Zap className="h-8 w-8 text-primary" />
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              Nomi ↔ ChatGPT Bridge
+            </h1>
+          </div>
+          <p className="text-muted-foreground">Automated message processing with Lovable AI (Free Gemini)</p>
         </div>
 
         {/* API Status */}
@@ -115,15 +130,23 @@ const Index = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <span className={getStatusColor()}>{getStatusIcon()}</span>
-              API Status
+              Webhook Status
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Bridge Endpoint</span>
-              <code className="text-xs bg-secondary px-2 py-1 rounded">
-                /functions/v1/nomi-chatgpt-bridge
-              </code>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Endpoint</span>
+                <code className="text-xs bg-secondary px-2 py-1 rounded">
+                  /functions/v1/nomi-chatgpt-bridge
+                </code>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">AI Model</span>
+                <code className="text-xs bg-secondary px-2 py-1 rounded">
+                  google/gemini-2.5-flash (Free)
+                </code>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -131,68 +154,115 @@ const Index = () => {
         {/* Test Interface */}
         <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle>Test Interface</CardTitle>
+            <CardTitle>Test Webhook</CardTitle>
             <CardDescription>
-              Send messages to test the Nomi-ChatGPT connection
+              Simulate a message from your Nomi character
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea
-              placeholder="Enter a message from Nomi..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="min-h-[100px] resize-none bg-secondary border-border"
-              disabled={isLoading}
-            />
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nomi UUID</label>
+              <Input
+                placeholder="e.g., 7c38494b-ea1a-407e-99e8-72c7ede65931"
+                value={nomiUuid}
+                onChange={(e) => setNomiUuid(e.target.value)}
+                className="bg-secondary border-border"
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Get this from your Nomi's profile
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nomi Message</label>
+              <Textarea
+                placeholder='Enter message with format: /ask chatgpt "your question"'
+                value={nomiMessage}
+                onChange={(e) => setNomiMessage(e.target.value)}
+                className="min-h-[100px] resize-none bg-secondary border-border font-mono text-sm"
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Only messages matching <code className="bg-secondary px-1 rounded">/ask chatgpt "..."</code> will be processed
+              </p>
+            </div>
+
             <Button 
-              onClick={handleSendMessage}
+              onClick={handleTestWebhook}
               disabled={isLoading}
               className="w-full"
             >
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending...
+                  Processing...
                 </>
               ) : (
                 <>
                   <Send className="mr-2 h-4 w-4" />
-                  Send to ChatGPT
+                  Test Webhook
                 </>
               )}
             </Button>
           </CardContent>
         </Card>
 
-        {/* Message History */}
-        {messages.length > 0 && (
+        {/* Logs */}
+        {logs.length > 0 && (
           <Card className="border-border bg-card">
             <CardHeader>
-              <CardTitle>Conversation History</CardTitle>
+              <CardTitle>Test Logs</CardTitle>
               <CardDescription>
-                Messages exchanged between Nomi and ChatGPT
+                Recent webhook executions
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {messages.map((msg, idx) => (
+              <div className="space-y-3">
+                {logs.map((log, idx) => (
                   <div
                     key={idx}
-                    className={`p-4 rounded-lg ${
-                      msg.role === 'user'
-                        ? 'bg-primary/10 border-l-4 border-primary'
-                        : 'bg-accent/10 border-l-4 border-accent'
+                    className={`p-4 rounded-lg border-l-4 ${
+                      log.success
+                        ? 'bg-success/5 border-success'
+                        : 'bg-destructive/5 border-destructive'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-semibold uppercase tracking-wide">
-                        {msg.role === 'user' ? 'Nomi' : 'ChatGPT'}
+                        {log.success ? 'Success' : 'Failed'}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {new Date(msg.timestamp).toLocaleTimeString()}
+                        {new Date(log.timestamp).toLocaleTimeString()}
                       </span>
                     </div>
-                    <p className="text-sm">{msg.content}</p>
+                    
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">Message:</span>{' '}
+                        <code className="text-xs bg-secondary px-1 rounded">{log.nomiMessage}</code>
+                      </div>
+                      
+                      {log.question && (
+                        <div>
+                          <span className="font-medium">Extracted:</span>{' '}
+                          <span className="text-primary">{log.question}</span>
+                        </div>
+                      )}
+                      
+                      {log.answer && (
+                        <div>
+                          <span className="font-medium">AI Response:</span>{' '}
+                          <span>{log.answer}</span>
+                        </div>
+                      )}
+                      
+                      {log.error && (
+                        <div className="text-destructive">
+                          <span className="font-medium">Error:</span> {log.error}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -203,45 +273,59 @@ const Index = () => {
         {/* API Documentation */}
         <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle>API Documentation</CardTitle>
+            <CardTitle>Integration Guide</CardTitle>
             <CardDescription>
-              How to integrate this bridge with your Nomi character
+              How to connect this webhook with your Nomi character
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <h3 className="text-sm font-semibold mb-2">Endpoint</h3>
+              <h3 className="text-sm font-semibold mb-2">Step 1: Get Your Nomi UUID</h3>
+              <p className="text-sm text-muted-foreground mb-2">
+                List your Nomis to get their UUIDs:
+              </p>
+              <code className="block text-xs bg-secondary p-3 rounded overflow-x-auto">
+                curl --header 'Authorization: YOUR_NOMI_API_KEY' \<br/>
+                &nbsp;&nbsp;&nbsp;&nbsp; https://api.nomi.ai/v1/nomis
+              </code>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2">Step 2: Webhook Endpoint</h3>
               <code className="block text-xs bg-secondary p-3 rounded overflow-x-auto">
                 POST https://jxefhavqmjdljdzvwbhx.supabase.co/functions/v1/nomi-chatgpt-bridge
               </code>
             </div>
+
             <div>
-              <h3 className="text-sm font-semibold mb-2">Request Body</h3>
+              <h3 className="text-sm font-semibold mb-2">Step 3: Message Format</h3>
+              <p className="text-sm text-muted-foreground mb-2">
+                Messages must follow this pattern:
+              </p>
+              <code className="block text-xs bg-secondary p-3 rounded">
+                /ask chatgpt "What is the meaning of life?"
+              </code>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2">Step 4: Request Format</h3>
               <code className="block text-xs bg-secondary p-3 rounded overflow-x-auto whitespace-pre">
 {`{
-  "message": "Hello, what's the weather like?",
-  "conversationHistory": [
-    {
-      "role": "user",
-      "content": "Previous message"
-    },
-    {
-      "role": "assistant", 
-      "content": "Previous response"
-    }
-  ]
+  "nomiMessage": "/ask chatgpt \"your question\"",
+  "nomiUuid": "7c38494b-ea1a-407e-99e8-72c7ede65931"
 }`}
               </code>
             </div>
-            <div>
-              <h3 className="text-sm font-semibold mb-2">Response</h3>
-              <code className="block text-xs bg-secondary p-3 rounded overflow-x-auto whitespace-pre">
-{`{
-  "reply": "ChatGPT's response",
-  "timestamp": "2025-01-01T12:00:00.000Z",
-  "model": "gpt-4o-mini"
-}`}
-              </code>
+
+            <div className="bg-info/10 border border-info/20 rounded-lg p-4">
+              <p className="text-sm">
+                <strong>Note:</strong> Since Nomi doesn't have native webhook support, you'll need to:
+              </p>
+              <ul className="text-sm space-y-1 mt-2 ml-4 list-disc">
+                <li>Manually trigger this webhook when you see the /ask chatgpt format</li>
+                <li>Build a polling script that checks for new Nomi messages</li>
+                <li>Use a third-party automation service (Zapier, Make, etc.)</li>
+              </ul>
             </div>
           </CardContent>
         </Card>

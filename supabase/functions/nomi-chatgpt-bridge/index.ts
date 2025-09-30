@@ -6,70 +6,125 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Parse /ask chatgpt "question" format
+function parseAskCommand(message: string): string | null {
+  const regex = /\/ask\s+chatgpt\s+"([^"]+)"/i;
+  const match = message.match(regex);
+  return match ? match[1] : null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { message, conversationHistory = [] } = await req.json();
+    const { nomiMessage, nomiUuid } = await req.json();
     
-    if (!message) {
-      throw new Error('No message provided');
+    if (!nomiMessage) {
+      throw new Error('No nomiMessage provided');
     }
 
-    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-    if (!OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is not configured');
+    if (!nomiUuid) {
+      throw new Error('No nomiUuid provided');
     }
 
-    console.log('Received message from Nomi:', message);
+    console.log('Received message from Nomi:', nomiMessage);
+    console.log('Nomi UUID:', nomiUuid);
 
-    // Build messages array for ChatGPT
-    const messages = [
-      {
-        role: 'system',
-        content: 'You are a helpful AI assistant responding to questions from a Nomi character. Be friendly and concise.'
-      },
-      ...conversationHistory,
-      {
-        role: 'user',
-        content: message
-      }
-    ];
+    // Parse the message for /ask chatgpt "question"
+    const question = parseAskCommand(nomiMessage);
+    
+    if (!question) {
+      console.log('Message does not match /ask chatgpt format, ignoring');
+      return new Response(
+        JSON.stringify({ 
+          ignored: true,
+          message: 'Message format not recognized'
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
 
-    console.log('Sending to ChatGPT...');
+    console.log('Extracted question:', question);
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Get API keys
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    const NOMI_API_KEY = Deno.env.get('NOMI_API_KEY');
+    
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY is not configured');
+    }
+
+    if (!NOMI_API_KEY) {
+      throw new Error('NOMI_API_KEY is not configured');
+    }
+
+    // Call Lovable AI (free Gemini)
+    console.log('Calling Lovable AI...');
+    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: messages,
-        temperature: 0.7,
-        max_tokens: 500
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful AI assistant. Provide clear, concise answers.'
+          },
+          {
+            role: 'user',
+            content: question
+          }
+        ],
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('OpenAI API error:', response.status, errorText);
-      throw new Error(`OpenAI API error: ${response.status}`);
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      console.error('Lovable AI error:', aiResponse.status, errorText);
+      throw new Error(`AI API error: ${aiResponse.status}`);
     }
 
-    const data = await response.json();
-    const reply = data.choices[0].message.content;
+    const aiData = await aiResponse.json();
+    const answer = aiData.choices[0].message.content;
 
-    console.log('ChatGPT response:', reply);
+    console.log('AI answer:', answer);
+
+    // Send response back to Nomi
+    console.log('Sending reply to Nomi...');
+    const nomiResponse = await fetch(`https://api.nomi.ai/v1/nomis/${nomiUuid}/chat`, {
+      method: 'POST',
+      headers: {
+        'Authorization': NOMI_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messageText: answer
+      }),
+    });
+
+    if (!nomiResponse.ok) {
+      const errorText = await nomiResponse.text();
+      console.error('Nomi API error:', nomiResponse.status, errorText);
+      throw new Error(`Nomi API error: ${nomiResponse.status}`);
+    }
+
+    const nomiData = await nomiResponse.json();
+    console.log('Reply sent to Nomi successfully');
 
     return new Response(
       JSON.stringify({ 
-        reply,
-        timestamp: new Date().toISOString(),
-        model: 'gpt-4o-mini'
+        success: true,
+        question,
+        answer,
+        nomiResponse: nomiData,
+        timestamp: new Date().toISOString()
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
