@@ -16,12 +16,20 @@ interface TestLog {
   error?: string;
 }
 
+interface PollInfo {
+  timestamp: string;
+  nomiUuid: string;
+  messagesFound: number;
+  messagesProcessed: number;
+}
+
 const Index = () => {
   const [nomiMessage, setNomiMessage] = useState('/ask chatgpt "What is the capital of France?"');
   const [nomiUuid, setNomiUuid] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [logs, setLogs] = useState<TestLog[]>([]);
+  const [lastPoll, setLastPoll] = useState<PollInfo | null>(null);
   const [apiStatus, setApiStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const { toast } = useToast();
 
@@ -116,6 +124,14 @@ const Index = () => {
 
       if (error) throw error;
 
+      // Update last poll info
+      setLastPoll({
+        timestamp: new Date().toISOString(),
+        nomiUuid: nomiUuid,
+        messagesFound: data.totalMessages || 0,
+        messagesProcessed: data.processedCount || 0
+      });
+
       if (data.processedCount > 0) {
         // Add all processed messages to logs
         const newLogs = data.processedMessages.map((msg: any) => ({
@@ -183,6 +199,42 @@ const Index = () => {
           </div>
           <p className="text-muted-foreground">Automated message processing with Lovable AI (Free Gemini)</p>
         </div>
+
+        {/* Last Poll Info */}
+        {lastPoll && (
+          <Card className="border-primary/20 bg-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-primary" />
+                Last Poll Results
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Nomi UUID</span>
+                  <code className="text-xs bg-secondary px-2 py-1 rounded">
+                    {lastPoll.nomiUuid}
+                  </code>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Polled At</span>
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(lastPoll.timestamp).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Messages Found</span>
+                  <span className="text-sm font-semibold">{lastPoll.messagesFound}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Messages Processed</span>
+                  <span className="text-sm font-semibold text-success">{lastPoll.messagesProcessed}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* API Status */}
         <Card className="border-border bg-card">
