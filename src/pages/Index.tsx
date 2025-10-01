@@ -20,6 +20,7 @@ const Index = () => {
   const [nomiMessage, setNomiMessage] = useState('/ask chatgpt "What is the capital of France?"');
   const [nomiUuid, setNomiUuid] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isPolling, setIsPolling] = useState(false);
   const [logs, setLogs] = useState<TestLog[]>([]);
   const [apiStatus, setApiStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const { toast } = useToast();
@@ -92,6 +93,64 @@ const Index = () => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handlePollMessages = async () => {
+    if (!nomiUuid.trim()) {
+      toast({
+        title: "Missing UUID",
+        description: "Please enter your Nomi UUID",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsPolling(true);
+    setApiStatus('idle');
+
+    try {
+      const { data, error } = await supabase.functions.invoke('poll-nomi-messages', {
+        body: { nomiUuid }
+      });
+
+      if (error) throw error;
+
+      if (data.processedCount > 0) {
+        // Add all processed messages to logs
+        const newLogs = data.processedMessages.map((msg: any) => ({
+          timestamp: msg.timestamp,
+          nomiMessage: `/ask chatgpt "${msg.question}"`,
+          question: msg.question,
+          answer: msg.answer,
+          success: true
+        }));
+        
+        setLogs(prev => [...newLogs, ...prev]);
+        setApiStatus('success');
+        
+        toast({
+          title: "Messages Processed",
+          description: `Successfully processed ${data.processedCount} message(s)`,
+        });
+      } else {
+        toast({
+          title: "No New Messages",
+          description: "No messages matching /ask chatgpt format found",
+        });
+      }
+
+    } catch (error: any) {
+      console.error('Poll Error:', error);
+      setApiStatus('error');
+      
+      toast({
+        title: "Poll Error",
+        description: error.message || "Failed to poll Nomi messages",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPolling(false);
     }
   };
 
@@ -188,23 +247,43 @@ const Index = () => {
               </p>
             </div>
 
-            <Button 
-              onClick={handleTestWebhook}
-              disabled={isLoading}
-              className="w-full"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Send className="mr-2 h-4 w-4" />
-                  Test Webhook
-                </>
-              )}
-            </Button>
+            <div className="grid grid-cols-2 gap-3">
+              <Button 
+                onClick={handleTestWebhook}
+                disabled={isLoading || isPolling}
+                variant="default"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-4 w-4" />
+                    Test Webhook
+                  </>
+                )}
+              </Button>
+              
+              <Button 
+                onClick={handlePollMessages}
+                disabled={isPolling || isLoading}
+                variant="secondary"
+              >
+                {isPolling ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Polling...
+                  </>
+                ) : (
+                  <>
+                    <Activity className="mr-2 h-4 w-4" />
+                    Poll Messages
+                  </>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
@@ -319,12 +398,13 @@ const Index = () => {
 
             <div className="bg-info/10 border border-info/20 rounded-lg p-4">
               <p className="text-sm">
-                <strong>Note:</strong> Since Nomi doesn't have native webhook support, you'll need to:
+                <strong>Polling Feature:</strong> Use the "Poll Messages" button to check for new Nomi messages automatically.
               </p>
               <ul className="text-sm space-y-1 mt-2 ml-4 list-disc">
-                <li>Manually trigger this webhook when you see the /ask chatgpt format</li>
-                <li>Build a polling script that checks for new Nomi messages</li>
-                <li>Use a third-party automation service (Zapier, Make, etc.)</li>
+                <li>The poller fetches recent messages from your Nomi</li>
+                <li>Processes any messages matching the /ask chatgpt format</li>
+                <li>Automatically sends AI responses back to Nomi</li>
+                <li>You can set up a cron job to run this periodically</li>
               </ul>
             </div>
           </CardContent>
