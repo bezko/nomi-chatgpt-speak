@@ -27,8 +27,10 @@ interface StoredMessage {
   id: string;
   nomi_name: string;
   nomi_uuid: string;
-  question: string;
-  answer: string;
+  question: string | null;
+  answer: string | null;
+  message_text: string | null;
+  message_type: string;
   processed_at: string;
 }
 
@@ -237,19 +239,30 @@ const Index = () => {
                 {recentMessages.map((msg) => (
                   <div key={msg.id} className="p-3 rounded-lg bg-secondary/50 border border-border">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-semibold text-primary">{msg.nomi_name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-primary">{msg.nomi_name}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                          {msg.message_type}
+                        </span>
+                      </div>
                       <span className="text-xs text-muted-foreground">
                         {new Date(msg.processed_at).toLocaleString()}
                       </span>
                     </div>
-                    <div className="space-y-2 text-sm">
-                      <div>
-                        <span className="font-medium">Q:</span> {msg.question}
+                    {msg.message_type === 'chatgpt' ? (
+                      <div className="space-y-2 text-sm">
+                        <div>
+                          <span className="font-medium">Q:</span> {msg.question}
+                        </div>
+                        <div>
+                          <span className="font-medium">A:</span> {msg.answer}
+                        </div>
                       </div>
-                      <div>
-                        <span className="font-medium">A:</span> {msg.answer}
+                    ) : (
+                      <div className="text-sm">
+                        <span className="font-medium">Message:</span> {msg.message_text}
                       </div>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>

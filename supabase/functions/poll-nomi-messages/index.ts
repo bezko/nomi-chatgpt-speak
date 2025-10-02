@@ -85,7 +85,7 @@ serve(async (req) => {
 
         const messagesData = await messagesResponse.json();
         
-        // Process messages that match the /ask chatgpt format
+        // Store all messages from Nomi
         if (messagesData.messages && Array.isArray(messagesData.messages)) {
           totalMessagesFound += messagesData.messages.length;
           
@@ -95,6 +95,7 @@ serve(async (req) => {
               const question = parseAskCommand(message.text);
               
               if (question) {
+                // This is a chatgpt question - process it with AI
                 console.log(`Found question to process from ${nomi.name}:`, question);
 
                 // Call Lovable AI
@@ -143,7 +144,7 @@ serve(async (req) => {
                 });
 
                 if (nomiResponse.ok) {
-                  // Store in database
+                  // Store chatgpt message in database
                   const { error: dbError } = await supabase
                     .from('nomi_messages')
                     .insert({
@@ -151,6 +152,8 @@ serve(async (req) => {
                       nomi_name: nomi.name,
                       question,
                       answer,
+                      message_text: message.text,
+                      message_type: 'chatgpt'
                     });
 
                   if (dbError) {
@@ -162,9 +165,34 @@ serve(async (req) => {
                     nomiUuid: nomi.uuid,
                     question,
                     answer,
+                    messageType: 'chatgpt',
                     timestamp: new Date().toISOString()
                   });
                   console.log('Reply sent to Nomi successfully and stored in database');
+                }
+              } else {
+                // Regular message - just store it
+                console.log(`Storing regular message from ${nomi.name}`);
+                const { error: dbError } = await supabase
+                  .from('nomi_messages')
+                  .insert({
+                    nomi_uuid: nomi.uuid,
+                    nomi_name: nomi.name,
+                    message_text: message.text,
+                    message_type: 'regular'
+                  });
+
+                if (dbError) {
+                  console.error('Database error:', dbError);
+                } else {
+                  processedMessages.push({
+                    nomiName: nomi.name,
+                    nomiUuid: nomi.uuid,
+                    messageText: message.text,
+                    messageType: 'regular',
+                    timestamp: new Date().toISOString()
+                  });
+                  console.log('Regular message stored in database');
                 }
               }
             }

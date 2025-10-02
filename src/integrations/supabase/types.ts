@@ -16,31 +16,37 @@ export type Database = {
     Tables: {
       nomi_messages: {
         Row: {
-          answer: string
+          answer: string | null
           created_at: string
           id: string
+          message_text: string | null
+          message_type: string | null
           nomi_name: string | null
           nomi_uuid: string
           processed_at: string
-          question: string
+          question: string | null
         }
         Insert: {
-          answer: string
+          answer?: string | null
           created_at?: string
           id?: string
+          message_text?: string | null
+          message_type?: string | null
           nomi_name?: string | null
           nomi_uuid: string
           processed_at?: string
-          question: string
+          question?: string | null
         }
         Update: {
-          answer?: string
+          answer?: string | null
           created_at?: string
           id?: string
+          message_text?: string | null
+          message_type?: string | null
           nomi_name?: string | null
           nomi_uuid?: string
           processed_at?: string
-          question?: string
+          question?: string | null
         }
         Relationships: []
       }
