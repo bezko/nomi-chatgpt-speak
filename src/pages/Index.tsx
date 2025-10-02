@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,9 +18,18 @@ interface TestLog {
 
 interface PollInfo {
   timestamp: string;
-  nomiUuid: string;
+  totalNomis: number;
   messagesFound: number;
   messagesProcessed: number;
+}
+
+interface StoredMessage {
+  id: string;
+  nomi_name: string;
+  nomi_uuid: string;
+  question: string;
+  answer: string;
+  processed_at: string;
 }
 
 const Index = () => {
@@ -30,8 +39,29 @@ const Index = () => {
   const [isPolling, setIsPolling] = useState(false);
   const [logs, setLogs] = useState<TestLog[]>([]);
   const [lastPoll, setLastPoll] = useState<PollInfo | null>(null);
+  const [recentMessages, setRecentMessages] = useState<StoredMessage[]>([]);
   const [apiStatus, setApiStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const { toast } = useToast();
+
+  // Fetch recent messages on mount and after polling
+  const fetchRecentMessages = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('nomi_messages')
+        .select('*')
+        .order('processed_at', { ascending: false })
+        .limit(5);
+
+      if (error) throw error;
+      setRecentMessages(data || []);
+    } catch (error: any) {
+      console.error('Error fetching recent messages:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecentMessages();
+  }, []);
 
   const handleTestWebhook = async () => {
     if (!nomiMessage.trim() || !nomiUuid.trim()) {
@@ -105,32 +135,24 @@ const Index = () => {
   };
 
   const handlePollMessages = async () => {
-    if (!nomiUuid.trim()) {
-      toast({
-        title: "Missing UUID",
-        description: "Please enter your Nomi UUID",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsPolling(true);
     setApiStatus('idle');
 
     try {
-      const { data, error } = await supabase.functions.invoke('poll-nomi-messages', {
-        body: { nomiUuid }
-      });
+      const { data, error } = await supabase.functions.invoke('poll-nomi-messages');
 
       if (error) throw error;
 
       // Update last poll info
       setLastPoll({
         timestamp: new Date().toISOString(),
-        nomiUuid: nomiUuid,
-        messagesFound: data.totalMessages || 0,
+        totalNomis: data.totalNomis || 0,
+        messagesFound: data.totalMessagesFound || 0,
         messagesProcessed: data.processedCount || 0
       });
+
+      // Fetch updated messages
+      await fetchRecentMessages();
 
       if (data.processedCount > 0) {
         // Add all processed messages to logs
@@ -147,12 +169,12 @@ const Index = () => {
         
         toast({
           title: "Messages Processed",
-          description: `Successfully processed ${data.processedCount} message(s)`,
+          description: `Successfully processed ${data.processedCount} message(s) from ${data.totalNomis} Nomi(s)`,
         });
       } else {
         toast({
           title: "No New Messages",
-          description: "No messages matching /ask chatgpt format found",
+          description: `Checked ${data.totalNomis} Nomi(s) - no new messages matching /ask chatgpt format found`,
         });
       }
 
@@ -200,6 +222,41 @@ const Index = () => {
           <p className="text-muted-foreground">Automated message processing with Lovable AI (Free Gemini)</p>
         </div>
 
+        {/* Recent Messages */}
+        {recentMessages.length > 0 && (
+          <Card className="border-primary/20 bg-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-primary" />
+                Last 5 Messages
+              </CardTitle>
+              <CardDescription>Most recent processed messages across all Nomis</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {recentMessages.map((msg) => (
+                  <div key={msg.id} className="p-3 rounded-lg bg-secondary/50 border border-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-semibold text-primary">{msg.nomi_name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(msg.processed_at).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">Q:</span> {msg.question}
+                      </div>
+                      <div>
+                        <span className="font-medium">A:</span> {msg.answer}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Last Poll Info */}
         {lastPoll && (
           <Card className="border-primary/20 bg-card">
@@ -212,10 +269,8 @@ const Index = () => {
             <CardContent>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Nomi UUID</span>
-                  <code className="text-xs bg-secondary px-2 py-1 rounded">
-                    {lastPoll.nomiUuid}
-                  </code>
+                  <span className="text-sm font-medium">Total Nomis</span>
+                  <span className="text-sm font-semibold">{lastPoll.totalNomis}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Polled At</span>
@@ -299,7 +354,7 @@ const Index = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <Button 
                 onClick={handleTestWebhook}
                 disabled={isLoading || isPolling}
@@ -317,25 +372,37 @@ const Index = () => {
                   </>
                 )}
               </Button>
-              
-              <Button 
-                onClick={handlePollMessages}
-                disabled={isPolling || isLoading}
-                variant="secondary"
-              >
-                {isPolling ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Polling...
-                  </>
-                ) : (
-                  <>
-                    <Activity className="mr-2 h-4 w-4" />
-                    Poll Messages
-                  </>
-                )}
-              </Button>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Poll All Nomis Button */}
+        <Card className="border-border bg-card">
+          <CardHeader>
+            <CardTitle>Auto-Poll All Nomis</CardTitle>
+            <CardDescription>
+              Automatically check all your Nomis for new messages
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button 
+              onClick={handlePollMessages}
+              disabled={isPolling || isLoading}
+              variant="secondary"
+              className="w-full"
+            >
+              {isPolling ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Polling All Nomis...
+                </>
+              ) : (
+                <>
+                  <Activity className="mr-2 h-4 w-4" />
+                  Poll All Nomis
+                </>
+              )}
+            </Button>
           </CardContent>
         </Card>
 
@@ -450,12 +517,14 @@ const Index = () => {
 
             <div className="bg-info/10 border border-info/20 rounded-lg p-4">
               <p className="text-sm">
-                <strong>Polling Feature:</strong> Use the "Poll Messages" button to check for new Nomi messages automatically.
+                <strong>Automatic Polling:</strong> The "Poll All Nomis" button fetches messages from all your Nomi characters automatically.
               </p>
               <ul className="text-sm space-y-1 mt-2 ml-4 list-disc">
-                <li>The poller fetches recent messages from your Nomi</li>
-                <li>Processes any messages matching the /ask chatgpt format</li>
-                <li>Automatically sends AI responses back to Nomi</li>
+                <li>Automatically fetches all Nomis from your account</li>
+                <li>Checks each Nomi for messages matching the /ask chatgpt format</li>
+                <li>Processes questions through Lovable AI (Free Gemini)</li>
+                <li>Sends responses back to each Nomi automatically</li>
+                <li>Stores all processed messages in the database</li>
                 <li>You can set up a cron job to run this periodically</li>
               </ul>
             </div>

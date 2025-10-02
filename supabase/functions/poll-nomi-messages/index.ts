@@ -1,12 +1,12 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Parse /ask chatgpt "question" format
 function parseAskCommand(message: string): string | null {
   const regex = /\/ask\s+chatgpt\s+"([^"]+)"/i;
   const match = message.match(regex);
@@ -19,17 +19,13 @@ serve(async (req) => {
   }
 
   try {
-    const { nomiUuid } = await req.json();
-    
-    if (!nomiUuid) {
-      throw new Error('No nomiUuid provided');
-    }
-
-    console.log('Polling messages for Nomi:', nomiUuid);
+    console.log('Starting polling of all Nomis');
 
     // Get API keys
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     const NOMI_API_KEY = Deno.env.get('NOMI_API_KEY');
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY is not configured');
@@ -39,9 +35,16 @@ serve(async (req) => {
       throw new Error('NOMI_API_KEY is not configured');
     }
 
-    // Get recent messages from Nomi
-    console.log('Fetching messages from Nomi...');
-    const messagesResponse = await fetch(`https://api.nomi.ai/v1/nomis/${nomiUuid}/chat`, {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('Supabase configuration is missing');
+    }
+
+    // Initialize Supabase client
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // Fetch all Nomis
+    console.log('Fetching all Nomis...');
+    const nomisResponse = await fetch('https://api.nomi.ai/v1/nomis', {
       method: 'GET',
       headers: {
         'Authorization': NOMI_API_KEY,
@@ -49,80 +52,121 @@ serve(async (req) => {
       },
     });
 
-    if (!messagesResponse.ok) {
-      const errorText = await messagesResponse.text();
-      console.error('Nomi API error:', messagesResponse.status, errorText);
-      throw new Error(`Nomi API error: ${messagesResponse.status}`);
+    if (!nomisResponse.ok) {
+      const errorText = await nomisResponse.text();
+      console.error('Nomi API error:', nomisResponse.status, errorText);
+      throw new Error(`Failed to fetch Nomis: ${nomisResponse.status}`);
     }
 
-    const messagesData = await messagesResponse.json();
-    console.log('Received messages:', messagesData);
+    const nomisData = await nomisResponse.json();
+    console.log(`Found ${nomisData.nomis?.length || 0} Nomis`);
 
     const processedMessages: any[] = [];
+    let totalMessagesFound = 0;
 
-    // Process messages that match the /ask chatgpt format
-    if (messagesData.messages && Array.isArray(messagesData.messages)) {
-      for (const message of messagesData.messages) {
-        // Only process messages from the Nomi (not user messages)
-        if (message.sent === 'nomi') {
-          const question = parseAskCommand(message.text);
+    // Process each Nomi
+    if (nomisData.nomis && Array.isArray(nomisData.nomis)) {
+      for (const nomi of nomisData.nomis) {
+        console.log(`Polling messages for Nomi: ${nomi.name} (${nomi.uuid})`);
+
+        // Get recent messages from this Nomi
+        const messagesResponse = await fetch(`https://api.nomi.ai/v1/nomis/${nomi.uuid}/chat`, {
+          method: 'GET',
+          headers: {
+            'Authorization': NOMI_API_KEY,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!messagesResponse.ok) {
+          console.error(`Failed to fetch messages for Nomi ${nomi.uuid}`);
+          continue;
+        }
+
+        const messagesData = await messagesResponse.json();
+        
+        // Process messages that match the /ask chatgpt format
+        if (messagesData.messages && Array.isArray(messagesData.messages)) {
+          totalMessagesFound += messagesData.messages.length;
           
-          if (question) {
-            console.log('Found question to process:', question);
+          for (const message of messagesData.messages) {
+            // Only process messages from the Nomi (not user messages)
+            if (message.sent === 'nomi') {
+              const question = parseAskCommand(message.text);
+              
+              if (question) {
+                console.log(`Found question to process from ${nomi.name}:`, question);
 
-            // Call Lovable AI
-            const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                model: 'google/gemini-2.5-flash',
-                messages: [
-                  {
-                    role: 'system',
-                    content: 'You are a helpful AI assistant. Provide clear, concise answers.'
+                // Call Lovable AI
+                const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+                    'Content-Type': 'application/json',
                   },
-                  {
-                    role: 'user',
-                    content: question
+                  body: JSON.stringify({
+                    model: 'google/gemini-2.5-flash',
+                    messages: [
+                      {
+                        role: 'system',
+                        content: 'You are a helpful AI assistant. Provide clear, concise answers.'
+                      },
+                      {
+                        role: 'user',
+                        content: question
+                      }
+                    ],
+                  }),
+                });
+
+                if (!aiResponse.ok) {
+                  const errorText = await aiResponse.text();
+                  console.error('Lovable AI error:', aiResponse.status, errorText);
+                  continue;
+                }
+
+                const aiData = await aiResponse.json();
+                const answer = aiData.choices[0].message.content;
+
+                console.log('AI answer:', answer);
+
+                // Send response back to Nomi
+                const nomiResponse = await fetch(`https://api.nomi.ai/v1/nomis/${nomi.uuid}/chat`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': NOMI_API_KEY,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    messageText: answer
+                  }),
+                });
+
+                if (nomiResponse.ok) {
+                  // Store in database
+                  const { error: dbError } = await supabase
+                    .from('nomi_messages')
+                    .insert({
+                      nomi_uuid: nomi.uuid,
+                      nomi_name: nomi.name,
+                      question,
+                      answer,
+                    });
+
+                  if (dbError) {
+                    console.error('Database error:', dbError);
                   }
-                ],
-              }),
-            });
 
-            if (!aiResponse.ok) {
-              const errorText = await aiResponse.text();
-              console.error('Lovable AI error:', aiResponse.status, errorText);
-              continue; // Skip this message and continue with others
-            }
-
-            const aiData = await aiResponse.json();
-            const answer = aiData.choices[0].message.content;
-
-            console.log('AI answer:', answer);
-
-            // Send response back to Nomi
-            const nomiResponse = await fetch(`https://api.nomi.ai/v1/nomis/${nomiUuid}/chat`, {
-              method: 'POST',
-              headers: {
-                'Authorization': NOMI_API_KEY,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                messageText: answer
-              }),
-            });
-
-            if (nomiResponse.ok) {
-              processedMessages.push({
-                messageId: message.uuid,
-                question,
-                answer,
-                timestamp: new Date().toISOString()
-              });
-              console.log('Reply sent to Nomi successfully');
+                  processedMessages.push({
+                    nomiName: nomi.name,
+                    nomiUuid: nomi.uuid,
+                    question,
+                    answer,
+                    timestamp: new Date().toISOString()
+                  });
+                  console.log('Reply sent to Nomi successfully and stored in database');
+                }
+              }
             }
           }
         }
@@ -132,6 +176,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true,
+        totalNomis: nomisData.nomis?.length || 0,
+        totalMessagesFound,
         processedCount: processedMessages.length,
         processedMessages,
         timestamp: new Date().toISOString()

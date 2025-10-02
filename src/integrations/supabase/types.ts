@@ -14,7 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      nomi_messages: {
+        Row: {
+          answer: string
+          created_at: string
+          id: string
+          nomi_name: string | null
+          nomi_uuid: string
+          processed_at: string
+          question: string
+        }
+        Insert: {
+          answer: string
+          created_at?: string
+          id?: string
+          nomi_name?: string | null
+          nomi_uuid: string
+          processed_at?: string
+          question: string
+        }
+        Update: {
+          answer?: string
+          created_at?: string
+          id?: string
+          nomi_name?: string | null
+          nomi_uuid?: string
+          processed_at?: string
+          question?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
