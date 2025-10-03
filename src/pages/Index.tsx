@@ -21,6 +21,11 @@ interface PollInfo {
   totalNomis: number;
   messagesFound: number;
   messagesProcessed: number;
+  rawResponses?: Array<{
+    nomiName: string;
+    nomiUuid: string;
+    response: any;
+  }>;
 }
 
 interface StoredMessage {
@@ -168,7 +173,8 @@ const Index = () => {
         timestamp: new Date().toISOString(),
         totalNomis: data.totalNomis || 0,
         messagesFound: data.totalMessagesFound || 0,
-        messagesProcessed: data.processedCount || 0
+        messagesProcessed: data.processedCount || 0,
+        rawResponses: data.rawResponses || []
       });
 
       // Fetch updated messages
@@ -266,6 +272,34 @@ const Index = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Raw API Responses */}
+        {lastPoll?.rawResponses && lastPoll.rawResponses.length > 0 && (
+          <Card className="border-primary/20 bg-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-primary" />
+                Raw API Responses
+              </CardTitle>
+              <CardDescription>Latest responses from Nomi API chat endpoints</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {lastPoll.rawResponses.map((raw, index) => (
+                  <div key={index} className="border rounded-lg p-4 bg-secondary/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold">{raw.nomiName}</span>
+                      <code className="text-xs bg-background px-2 py-1 rounded border">{raw.nomiUuid}</code>
+                    </div>
+                    <pre className="text-xs bg-background p-3 rounded border overflow-x-auto max-h-96 overflow-y-auto">
+                      {JSON.stringify(raw.response, null, 2)}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Recent Messages */}
         {recentMessages.length > 0 && (

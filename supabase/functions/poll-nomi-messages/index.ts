@@ -62,6 +62,7 @@ serve(async (req) => {
     console.log(`Found ${nomisData.nomis?.length || 0} Nomis`);
 
     const processedMessages: any[] = [];
+    const rawResponses: any[] = [];
     let totalMessagesFound = 0;
 
     // Process each Nomi
@@ -84,6 +85,13 @@ serve(async (req) => {
         }
 
         const messagesData = await messagesResponse.json();
+        
+        // Store raw response for this Nomi
+        rawResponses.push({
+          nomiName: nomi.name,
+          nomiUuid: nomi.uuid,
+          response: messagesData
+        });
         
         // Store all messages from Nomi
         if (messagesData.messages && Array.isArray(messagesData.messages)) {
@@ -208,6 +216,7 @@ serve(async (req) => {
         totalMessagesFound,
         processedCount: processedMessages.length,
         processedMessages,
+        rawResponses,
         timestamp: new Date().toISOString()
       }),
       {
