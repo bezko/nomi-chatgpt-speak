@@ -43,6 +43,7 @@ const Index = () => {
   const [lastPoll, setLastPoll] = useState<PollInfo | null>(null);
   const [recentMessages, setRecentMessages] = useState<StoredMessage[]>([]);
   const [apiStatus, setApiStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [nomis, setNomis] = useState<Array<{ uuid: string; name: string }>>([]);
   const { toast } = useToast();
 
   // Fetch recent messages on mount and after polling
@@ -61,8 +62,25 @@ const Index = () => {
     }
   };
 
+  const fetchNomis = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+        body: { action: 'list-nomis' }
+      });
+
+      if (error) throw error;
+      
+      if (data?.nomis) {
+        setNomis(data.nomis);
+      }
+    } catch (error: any) {
+      console.error('Error fetching Nomis:', error);
+    }
+  };
+
   useEffect(() => {
     fetchRecentMessages();
+    fetchNomis();
   }, []);
 
   const handleTestWebhook = async () => {
@@ -223,6 +241,31 @@ const Index = () => {
           </div>
           <p className="text-muted-foreground">Automated message processing with Lovable AI (Free Gemini)</p>
         </div>
+
+        {/* Your Nomis */}
+        <Card className="border-primary/20 bg-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary" />
+              Your Nomis
+            </CardTitle>
+            <CardDescription>All Nomis connected to your account</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {nomis.length === 0 ? (
+              <p className="text-muted-foreground text-sm">Loading Nomis...</p>
+            ) : (
+              <div className="space-y-2">
+                {nomis.map((nomi) => (
+                  <div key={nomi.uuid} className="flex items-center justify-between p-3 border rounded-lg bg-secondary/50">
+                    <span className="font-medium">{nomi.name}</span>
+                    <code className="text-xs bg-background px-2 py-1 rounded border">{nomi.uuid}</code>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Recent Messages */}
         {recentMessages.length > 0 && (

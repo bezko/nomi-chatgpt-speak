@@ -19,7 +19,48 @@ serve(async (req) => {
   }
 
   try {
-    const { nomiMessage, nomiUuid } = await req.json();
+    const body = await req.json();
+    
+    // Handle list-nomis action
+    if (body.action === 'list-nomis') {
+      const NOMI_API_KEY = Deno.env.get('NOMI_API_KEY');
+      
+      if (!NOMI_API_KEY) {
+        throw new Error('NOMI_API_KEY is not configured');
+      }
+
+      console.log('Fetching list of Nomis...');
+      const nomisResponse = await fetch('https://api.nomi.ai/v1/nomis', {
+        method: 'GET',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+        },
+      });
+
+      if (!nomisResponse.ok) {
+        const errorText = await nomisResponse.text();
+        console.error('Nomi API error:', nomisResponse.status, errorText);
+        throw new Error(`Nomi API error: ${nomisResponse.status}`);
+      }
+
+      const nomisData = await nomisResponse.json();
+      const nomis = nomisData.nomis.map((nomi: any) => ({
+        uuid: nomi.uuid,
+        name: nomi.name
+      }));
+
+      console.log(`Found ${nomis.length} Nomis`);
+      
+      return new Response(
+        JSON.stringify({ nomis }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Original webhook handling
+    const { nomiMessage, nomiUuid } = body;
     
     if (!nomiMessage) {
       throw new Error('No nomiMessage provided');
