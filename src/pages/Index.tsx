@@ -53,6 +53,7 @@ const Index = () => {
   const [selectedNomiRooms, setSelectedNomiRooms] = useState<{ [key: string]: boolean }>({});
   const [messageToSend, setMessageToSend] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [autoSelectedNomis, setAutoSelectedNomis] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   // Fetch recent messages on mount and after polling
@@ -175,10 +176,83 @@ const Index = () => {
     }));
   };
 
+  const fetchAutoSelectedNomis = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('selected_nomis' as any)
+        .select('*');
+
+      if (error) throw error;
+      
+      if (data) {
+        const selectedSet = new Set(data.map((item: any) => `${item.nomi_uuid}|${item.room_uuid || 'default'}`));
+        setAutoSelectedNomis(selectedSet);
+      }
+    } catch (error: any) {
+      console.error('Error fetching auto-selected Nomis:', error);
+    }
+  };
+
+  const toggleAutoSelection = async (nomiUuid: string, nomiName: string, roomUuid: string | null, roomName: string | null) => {
+    const key = `${nomiUuid}|${roomUuid || 'default'}`;
+    const isCurrentlySelected = autoSelectedNomis.has(key);
+
+    try {
+      if (isCurrentlySelected) {
+        // Remove from database
+        const { error } = await supabase
+          .from('selected_nomis' as any)
+          .delete()
+          .eq('nomi_uuid', nomiUuid)
+          .eq('room_uuid', roomUuid);
+
+        if (error) throw error;
+
+        setAutoSelectedNomis(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(key);
+          return newSet;
+        });
+
+        toast({
+          title: "Removed from auto-polling",
+          description: `${nomiName} in ${roomName || 'default room'} will no longer be auto-polled`,
+        });
+      } else {
+        // Add to database
+        const { error } = await supabase
+          .from('selected_nomis' as any)
+          .insert({
+            nomi_uuid: nomiUuid,
+            nomi_name: nomiName,
+            room_uuid: roomUuid,
+            room_name: roomName
+          });
+
+        if (error) throw error;
+
+        setAutoSelectedNomis(prev => new Set(prev).add(key));
+
+        toast({
+          title: "Added to auto-polling",
+          description: `${nomiName} in ${roomName || 'default room'} will be auto-polled every minute`,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error toggling auto selection:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update auto-polling selection",
+        variant: "destructive",
+      });
+    }
+  };
+
   useEffect(() => {
     fetchRecentMessages();
     fetchNomis();
     fetchRooms();
+    fetchAutoSelectedNomis();
   }, []);
 
   const handleTestWebhook = async () => {
@@ -341,12 +415,95 @@ const Index = () => {
           <p className="text-muted-foreground">Automated message processing with Lovable AI (Free Gemini)</p>
         </div>
 
-        {/* Send Messages to Nomis in Rooms */}
+        {/* Auto-Polling Configuration */}
+        <Card className="border-accent/20 bg-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-accent" />
+              Auto-Polling Configuration
+            </CardTitle>
+            <CardDescription>
+              Select Nomis to auto-poll every minute. Questions ending with '?' will be answered by Gemini.
+              {autoSelectedNomis.size > 0 && (
+                <span className="block mt-1 text-accent font-medium">
+                  {autoSelectedNomis.size} Nomi(s) selected for auto-polling
+                </span>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-4">
+              <div className="text-sm font-medium">Your Nomis (Default Rooms)</div>
+              {nomis.length === 0 ? (
+                <p className="text-muted-foreground text-sm">Loading Nomis...</p>
+              ) : (
+                <div className="grid gap-2">
+                  {nomis.map((nomi) => {
+                    const key = `${nomi.uuid}|default`;
+                    const isSelected = autoSelectedNomis.has(key);
+                    return (
+                      <div key={key} className={`flex items-center gap-3 p-3 border rounded-lg transition-colors ${isSelected ? 'bg-accent/10 border-accent/30' : 'bg-secondary/30 hover:bg-secondary/50'}`}>
+                        <input
+                          type="checkbox"
+                          id={`auto-${key}`}
+                          checked={isSelected}
+                          onChange={() => toggleAutoSelection(nomi.uuid, nomi.name, null, null)}
+                          className="h-4 w-4 rounded border-border"
+                        />
+                        <label htmlFor={`auto-${key}`} className="flex-1 flex items-center justify-between cursor-pointer">
+                          <span className="font-medium">{nomi.name}</span>
+                          <code className="text-xs bg-background px-2 py-1 rounded border">{nomi.uuid}</code>
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {rooms.length > 0 && (
+              <div className="space-y-4">
+                <div className="text-sm font-medium">Rooms</div>
+                {rooms.map((room) => (
+                  <div key={room.uuid} className="border rounded-lg p-3 bg-secondary/20">
+                    <div className="font-medium mb-3 flex items-center justify-between">
+                      <span>{room.name}</span>
+                      <code className="text-xs bg-background px-2 py-1 rounded border">{room.uuid}</code>
+                    </div>
+                    <div className="grid gap-2 pl-4">
+                      {room.nomis && room.nomis.map((nomi) => {
+                        const key = `${nomi.uuid}|${room.uuid}`;
+                        const isSelected = autoSelectedNomis.has(key);
+                        return (
+                          <div key={key} className={`flex items-center gap-3 p-2 border rounded-lg transition-colors ${isSelected ? 'bg-accent/10 border-accent/30' : 'bg-background/50 hover:bg-background'}`}>
+                            <input
+                              type="checkbox"
+                              id={`auto-${key}`}
+                              checked={isSelected}
+                              onChange={() => toggleAutoSelection(nomi.uuid, nomi.name, room.uuid, room.name)}
+                              className="h-4 w-4 rounded border-border"
+                            />
+                            <label htmlFor={`auto-${key}`} className="flex-1 flex items-center justify-between cursor-pointer">
+                              <span className="text-sm">{nomi.name}</span>
+                              <code className="text-xs bg-secondary px-2 py-1 rounded border">{nomi.uuid}</code>
+                            </label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Manual Message Sending */}
         <Card className="border-primary/20 bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Send className="h-5 w-5 text-primary" />
-              Send Messages to Nomis
+              Manual Message Sending
             </CardTitle>
             <CardDescription>Select Nomi-Room combinations and send a message</CardDescription>
           </CardHeader>
