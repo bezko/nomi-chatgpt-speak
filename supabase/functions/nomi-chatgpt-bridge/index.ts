@@ -20,15 +20,14 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
+    const NOMI_API_KEY = Deno.env.get('NOMI_API_KEY');
     
+    if (!NOMI_API_KEY) {
+      throw new Error('NOMI_API_KEY is not configured');
+    }
+
     // Handle list-nomis action
     if (body.action === 'list-nomis') {
-      const NOMI_API_KEY = Deno.env.get('NOMI_API_KEY');
-      
-      if (!NOMI_API_KEY) {
-        throw new Error('NOMI_API_KEY is not configured');
-      }
-
       console.log('Fetching list of Nomis...');
       const nomisResponse = await fetch('https://api.nomi.ai/v1/nomis', {
         method: 'GET',
@@ -53,6 +52,80 @@ serve(async (req) => {
       
       return new Response(
         JSON.stringify({ nomis }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Handle list-rooms action
+    if (body.action === 'list-rooms') {
+      console.log('Fetching list of rooms...');
+      const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms', {
+        method: 'GET',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+        },
+      });
+
+      if (!roomsResponse.ok) {
+        const errorText = await roomsResponse.text();
+        console.error('Nomi API error:', roomsResponse.status, errorText);
+        throw new Error(`Nomi API error: ${roomsResponse.status}`);
+      }
+
+      const roomsData = await roomsResponse.json();
+      
+      console.log(`Found ${roomsData.rooms?.length || 0} rooms`);
+      
+      return new Response(
+        JSON.stringify({ rooms: roomsData.rooms || [] }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Handle send-message action (send message to specific Nomi in specific room)
+    if (body.action === 'send-message') {
+      const { nomiUuid, roomUuid, message } = body;
+      
+      if (!nomiUuid || !message) {
+        throw new Error('nomiUuid and message are required');
+      }
+
+      console.log(`Sending message to Nomi ${nomiUuid} in room ${roomUuid || 'default'}`);
+      
+      const url = roomUuid 
+        ? `https://api.nomi.ai/v1/nomis/${nomiUuid}/rooms/${roomUuid}/chat`
+        : `https://api.nomi.ai/v1/nomis/${nomiUuid}/chat`;
+      
+      const sendResponse = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messageText: message
+        }),
+      });
+
+      if (!sendResponse.ok) {
+        const errorText = await sendResponse.text();
+        console.error('Nomi API error:', sendResponse.status, errorText);
+        throw new Error(`Nomi API error: ${sendResponse.status}`);
+      }
+
+      const responseData = await sendResponse.json();
+      console.log('Message sent successfully');
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true,
+          response: responseData,
+          timestamp: new Date().toISOString()
+        }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
@@ -91,16 +164,11 @@ serve(async (req) => {
 
     console.log('Extracted question:', question);
 
-    // Get API keys
+    // Get Lovable API key
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    const NOMI_API_KEY = Deno.env.get('NOMI_API_KEY');
     
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY is not configured');
-    }
-
-    if (!NOMI_API_KEY) {
-      throw new Error('NOMI_API_KEY is not configured');
     }
 
     // Call Lovable AI (free Gemini)

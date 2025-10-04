@@ -49,6 +49,10 @@ const Index = () => {
   const [recentMessages, setRecentMessages] = useState<StoredMessage[]>([]);
   const [apiStatus, setApiStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [nomis, setNomis] = useState<Array<{ uuid: string; name: string }>>([]);
+  const [rooms, setRooms] = useState<Array<{ uuid: string; name: string; nomis: Array<{ uuid: string; name: string }> }>>([]);
+  const [selectedNomiRooms, setSelectedNomiRooms] = useState<{ [key: string]: boolean }>({});
+  const [messageToSend, setMessageToSend] = useState('');
+  const [isSending, setIsSending] = useState(false);
   const { toast } = useToast();
 
   // Fetch recent messages on mount and after polling
@@ -83,9 +87,98 @@ const Index = () => {
     }
   };
 
+  const fetchRooms = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+        body: { action: 'list-rooms' }
+      });
+
+      if (error) throw error;
+      
+      if (data?.rooms) {
+        setRooms(data.rooms);
+      }
+    } catch (error: any) {
+      console.error('Error fetching rooms:', error);
+    }
+  };
+
+  const handleSendMessages = async () => {
+    const selected = Object.entries(selectedNomiRooms).filter(([_, checked]) => checked);
+    
+    if (selected.length === 0) {
+      toast({
+        title: "No selections",
+        description: "Please select at least one Nomi-Room combination",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!messageToSend.trim()) {
+      toast({
+        title: "No message",
+        description: "Please enter a message to send",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSending(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const [key, _] of selected) {
+      const [nomiUuid, roomUuid] = key.split('|');
+      
+      try {
+        const { error } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+          body: { 
+            action: 'send-message',
+            nomiUuid,
+            roomUuid: roomUuid === 'default' ? null : roomUuid,
+            message: messageToSend
+          }
+        });
+
+        if (error) throw error;
+        successCount++;
+      } catch (error: any) {
+        console.error(`Error sending to ${key}:`, error);
+        errorCount++;
+      }
+    }
+
+    setIsSending(false);
+    setMessageToSend('');
+    setSelectedNomiRooms({});
+
+    if (successCount > 0) {
+      toast({
+        title: "Messages sent",
+        description: `Successfully sent ${successCount} message(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`,
+      });
+    } else {
+      toast({
+        title: "Error",
+        description: "Failed to send messages",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const toggleSelection = (nomiUuid: string, roomUuid: string) => {
+    const key = `${nomiUuid}|${roomUuid}`;
+    setSelectedNomiRooms(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
   useEffect(() => {
     fetchRecentMessages();
     fetchNomis();
+    fetchRooms();
   }, []);
 
   const handleTestWebhook = async () => {
@@ -248,28 +341,102 @@ const Index = () => {
           <p className="text-muted-foreground">Automated message processing with Lovable AI (Free Gemini)</p>
         </div>
 
-        {/* Your Nomis */}
+        {/* Send Messages to Nomis in Rooms */}
         <Card className="border-primary/20 bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-primary" />
-              Your Nomis
+              <Send className="h-5 w-5 text-primary" />
+              Send Messages to Nomis
             </CardTitle>
-            <CardDescription>All Nomis connected to your account</CardDescription>
+            <CardDescription>Select Nomi-Room combinations and send a message</CardDescription>
           </CardHeader>
-          <CardContent>
-            {nomis.length === 0 ? (
-              <p className="text-muted-foreground text-sm">Loading Nomis...</p>
-            ) : (
-              <div className="space-y-2">
-                {nomis.map((nomi) => (
-                  <div key={nomi.uuid} className="flex items-center justify-between p-3 border rounded-lg bg-secondary/50">
-                    <span className="font-medium">{nomi.name}</span>
-                    <code className="text-xs bg-background px-2 py-1 rounded border">{nomi.uuid}</code>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Message to Send</label>
+              <Textarea
+                placeholder="Enter your message..."
+                value={messageToSend}
+                onChange={(e) => setMessageToSend(e.target.value)}
+                className="min-h-[80px] resize-none bg-secondary border-border"
+                disabled={isSending}
+              />
+            </div>
+
+            <div className="space-y-4">
+              <div className="text-sm font-medium">Your Nomis (Default Rooms)</div>
+              {nomis.length === 0 ? (
+                <p className="text-muted-foreground text-sm">Loading Nomis...</p>
+              ) : (
+                <div className="grid gap-2">
+                  {nomis.map((nomi) => (
+                    <div key={`${nomi.uuid}-default`} className="flex items-center gap-3 p-3 border rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors">
+                      <input
+                        type="checkbox"
+                        id={`nomi-${nomi.uuid}-default`}
+                        checked={selectedNomiRooms[`${nomi.uuid}|default`] || false}
+                        onChange={() => toggleSelection(nomi.uuid, 'default')}
+                        className="h-4 w-4 rounded border-border"
+                        disabled={isSending}
+                      />
+                      <label htmlFor={`nomi-${nomi.uuid}-default`} className="flex-1 flex items-center justify-between cursor-pointer">
+                        <span className="font-medium">{nomi.name}</span>
+                        <code className="text-xs bg-background px-2 py-1 rounded border">{nomi.uuid}</code>
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {rooms.length > 0 && (
+              <div className="space-y-4">
+                <div className="text-sm font-medium">Rooms</div>
+                {rooms.map((room) => (
+                  <div key={room.uuid} className="border rounded-lg p-3 bg-secondary/20">
+                    <div className="font-medium mb-3 flex items-center justify-between">
+                      <span>{room.name}</span>
+                      <code className="text-xs bg-background px-2 py-1 rounded border">{room.uuid}</code>
+                    </div>
+                    <div className="grid gap-2 pl-4">
+                      {room.nomis && room.nomis.map((nomi) => (
+                        <div key={`${nomi.uuid}-${room.uuid}`} className="flex items-center gap-3 p-2 border rounded-lg bg-background/50 hover:bg-background transition-colors">
+                          <input
+                            type="checkbox"
+                            id={`nomi-${nomi.uuid}-room-${room.uuid}`}
+                            checked={selectedNomiRooms[`${nomi.uuid}|${room.uuid}`] || false}
+                            onChange={() => toggleSelection(nomi.uuid, room.uuid)}
+                            className="h-4 w-4 rounded border-border"
+                            disabled={isSending}
+                          />
+                          <label htmlFor={`nomi-${nomi.uuid}-room-${room.uuid}`} className="flex-1 flex items-center justify-between cursor-pointer">
+                            <span className="text-sm">{nomi.name}</span>
+                            <code className="text-xs bg-secondary px-2 py-1 rounded border">{nomi.uuid}</code>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
+
+            <Button 
+              onClick={handleSendMessages}
+              disabled={isSending || Object.values(selectedNomiRooms).every(v => !v)}
+              className="w-full"
+            >
+              {isSending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  Send to Selected ({Object.values(selectedNomiRooms).filter(v => v).length})
+                </>
+              )}
+            </Button>
           </CardContent>
         </Card>
 
