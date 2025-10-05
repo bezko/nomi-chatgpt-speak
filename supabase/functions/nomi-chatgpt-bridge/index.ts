@@ -76,10 +76,20 @@ serve(async (req) => {
 
       const roomsData = await roomsResponse.json();
       
-      console.log(`Found ${roomsData.rooms?.length || 0} rooms`);
+      // Structure rooms with their nomis
+      const rooms = (roomsData.rooms || []).map((room: any) => ({
+        uuid: room.uuid,
+        name: room.name,
+        nomis: (room.nomis || []).map((nomi: any) => ({
+          uuid: nomi.uuid,
+          name: nomi.name
+        }))
+      }));
+      
+      console.log(`Found ${rooms.length} rooms with nomis`);
       
       return new Response(
-        JSON.stringify({ rooms: roomsData.rooms || [] }),
+        JSON.stringify({ rooms }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }

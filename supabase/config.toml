@@ -2,3 +2,6 @@ project_id = "jxefhavqmjdljdzvwbhx"
 
 [functions.nomi-chatgpt-bridge]
 verify_jwt = false
+
+[functions.auto-poll-nomis]
+verify_jwt = false
