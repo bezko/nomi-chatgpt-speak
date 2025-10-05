@@ -61,7 +61,7 @@ serve(async (req) => {
     // Handle list-rooms action
     if (body.action === 'list-rooms') {
       console.log('Fetching list of rooms...');
-      const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms', {
+      const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms/', {
         method: 'GET',
         headers: {
           'Authorization': NOMI_API_KEY,
@@ -78,7 +78,7 @@ serve(async (req) => {
       
       // Structure rooms with their nomis
       const rooms = (roomsData.rooms || []).map((room: any) => ({
-        uuid: room.uuid,
+        id: room.id,
         name: room.name,
         nomis: (room.nomis || []).map((nomi: any) => ({
           uuid: nomi.uuid,
@@ -90,6 +90,45 @@ serve(async (req) => {
       
       return new Response(
         JSON.stringify({ rooms }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Handle request-chat action (request chat from Nomi in room)
+    if (body.action === 'request-chat') {
+      const { roomId } = body;
+      
+      if (!roomId) {
+        throw new Error('roomId is required');
+      }
+
+      console.log(`Requesting chat from room ${roomId}`);
+      
+      const requestResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/chat/request`, {
+        method: 'POST',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!requestResponse.ok) {
+        const errorText = await requestResponse.text();
+        console.error('Nomi API error:', requestResponse.status, errorText);
+        throw new Error(`Nomi API error: ${requestResponse.status}`);
+      }
+
+      const responseData = await requestResponse.json();
+      console.log('Chat request sent successfully');
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true,
+          response: responseData,
+          timestamp: new Date().toISOString()
+        }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
