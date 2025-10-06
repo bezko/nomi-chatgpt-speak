@@ -78,7 +78,7 @@ serve(async (req) => {
       console.log('Nomi API list-rooms response:', JSON.stringify(roomsData, null, 2));
       
       const rooms = (roomsData.rooms || []).map((room: any) => ({
-        id: room.id,
+        id: room.uuid,
         name: room.name,
         nomis: (room.nomis || []).map((nomi: any) => ({
           uuid: nomi.uuid,
