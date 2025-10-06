@@ -110,7 +110,9 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           name,
-          backchannelingEnabled
+          backchannelingEnabled,
+          nomiUuids: ['d94ae61e-e606-45ec-8456-324d1e76c6aa'], // Paige
+          note: 'Inquisitorium room for automated Q&A'
         }),
       });
 
