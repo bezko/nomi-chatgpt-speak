@@ -75,6 +75,7 @@ serve(async (req) => {
       }
 
       const roomsData = await roomsResponse.json();
+      console.log('Nomi API list-rooms response:', JSON.stringify(roomsData, null, 2));
       
       // Structure rooms with their nomis
       const rooms = (roomsData.rooms || []).map((room: any) => ({
@@ -122,6 +123,7 @@ serve(async (req) => {
 
       const responseData = await requestResponse.json();
       console.log('Chat request sent successfully');
+      console.log('Nomi API request-chat response:', JSON.stringify(responseData, null, 2));
       
       return new Response(
         JSON.stringify({ 
@@ -168,6 +170,7 @@ serve(async (req) => {
 
       const responseData = await sendResponse.json();
       console.log('Message sent successfully');
+      console.log('Nomi API send-message response:', JSON.stringify(responseData, null, 2));
       
       return new Response(
         JSON.stringify({ 
@@ -275,6 +278,7 @@ serve(async (req) => {
 
     const nomiData = await nomiResponse.json();
     console.log('Reply sent to Nomi successfully');
+    console.log('Nomi API reply response:', JSON.stringify(nomiData, null, 2));
 
     return new Response(
       JSON.stringify({ 
