@@ -211,8 +211,29 @@ serve(async (req) => {
 
       if (!messagesResponse.ok) {
         const errorText = await messagesResponse.text();
-        console.error('Nomi API error:', messagesResponse.status, errorText);
-        throw new Error(`Nomi API error: ${messagesResponse.status}`);
+        console.error('Nomi API error (rooms/chat):', messagesResponse.status, errorText);
+        if (messagesResponse.status === 404) {
+          console.log(`Retrying fallback endpoint for messages: /v1/rooms/${roomId}/messages`);
+          const fallbackResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/messages`, {
+            method: 'GET',
+            headers: { 'Authorization': NOMI_API_KEY },
+          });
+          if (fallbackResponse.ok) {
+            const fallbackData = await fallbackResponse.json();
+            return new Response(
+              JSON.stringify({ messages: fallbackData.messages || [] }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          } else {
+            const fbText = await fallbackResponse.text();
+            console.error('Nomi API error (rooms/messages):', fallbackResponse.status, fbText);
+          }
+        }
+        // Gracefully return empty array to keep UI working
+        return new Response(
+          JSON.stringify({ messages: [] }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
       const messagesData = await messagesResponse.json();
