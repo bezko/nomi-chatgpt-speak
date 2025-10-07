@@ -143,13 +143,12 @@ const Index = () => {
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Get messages
-        const { data: messagesData, error: messagesError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
-          body: { 
-            action: 'get-room-messages',
-            roomId: room.id,
-            nomiUuid: nomi.uuid
-          }
-        });
+      const { data: messagesData, error: messagesError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+        body: { 
+          action: 'get-room-messages',
+          roomId: room.id
+        }
+      });
 
         if (messagesError) {
           console.error('Error getting messages:', messagesError);

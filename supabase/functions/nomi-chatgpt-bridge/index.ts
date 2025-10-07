@@ -198,11 +198,11 @@ serve(async (req) => {
 
     // Handle get-room-messages action
     if (body.action === 'get-room-messages') {
-      const { roomId, nomiUuid } = body;
+      const { roomId } = body;
       
-      console.log(`Fetching messages for nomi ${nomiUuid} in room ${roomId}`);
+      console.log(`Fetching messages for room ${roomId}`);
       
-      const messagesResponse = await fetch(`https://api.nomi.ai/v1/nomis/${nomiUuid}/rooms/${roomId}/chat`, {
+      const messagesResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/chat`, {
         method: 'GET',
         headers: {
           'Authorization': NOMI_API_KEY,
