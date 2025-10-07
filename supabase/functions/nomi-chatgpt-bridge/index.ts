@@ -139,7 +139,7 @@ serve(async (req) => {
       
       console.log(`Adding nomi ${nomiUuid} to room ${roomId}`);
       
-      const addResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/nomi`, {
+      const addResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/nomis`, {
         method: 'POST',
         headers: {
           'Authorization': NOMI_API_KEY,

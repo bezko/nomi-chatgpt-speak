@@ -129,7 +129,8 @@ const Index = () => {
         const { error: requestError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
           body: { 
             action: 'request-chat',
-            roomId: room.id
+            roomId: room.id,
+            nomiUuid: nomi.uuid
           }
         });
 
