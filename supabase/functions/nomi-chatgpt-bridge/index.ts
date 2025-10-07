@@ -201,49 +201,46 @@ serve(async (req) => {
       const { roomId } = body;
       
       console.log(`Fetching messages for room ${roomId}`);
-      
-      const messagesResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/chat`, {
+
+      // Try the messages endpoint first (current API)
+      const primaryResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/messages`, {
         method: 'GET',
-        headers: {
-          'Authorization': NOMI_API_KEY,
-        },
+        headers: { 'Authorization': NOMI_API_KEY },
       });
 
-      if (!messagesResponse.ok) {
-        const errorText = await messagesResponse.text();
-        console.error('Nomi API error (rooms/chat):', messagesResponse.status, errorText);
-        if (messagesResponse.status === 404) {
-          console.log(`Retrying fallback endpoint for messages: /v1/rooms/${roomId}/messages`);
-          const fallbackResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/messages`, {
-            method: 'GET',
-            headers: { 'Authorization': NOMI_API_KEY },
-          });
-          if (fallbackResponse.ok) {
-            const fallbackData = await fallbackResponse.json();
-            return new Response(
-              JSON.stringify({ messages: fallbackData.messages || [] }),
-              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          } else {
-            const fbText = await fallbackResponse.text();
-            console.error('Nomi API error (rooms/messages):', fallbackResponse.status, fbText);
-          }
-        }
-        // Gracefully return empty array to keep UI working
+      if (primaryResponse.ok) {
+        const primaryData = await primaryResponse.json();
         return new Response(
-          JSON.stringify({ messages: [] }),
+          JSON.stringify({ messages: primaryData.messages || [] }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const messagesData = await messagesResponse.json();
-      console.log('Nomi API get-room-messages response:', JSON.stringify(messagesData, null, 2));
-      
+      const primaryText = await primaryResponse.text();
+      console.warn('Nomi API warning (rooms/messages):', primaryResponse.status, primaryText);
+
+      // Fallback to legacy chat endpoint
+      const fallbackResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/chat`, {
+        method: 'GET',
+        headers: { 'Authorization': NOMI_API_KEY },
+      });
+
+      if (fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        console.log('Nomi API get-room-messages (fallback chat) response:', JSON.stringify(fallbackData, null, 2));
+        return new Response(
+          JSON.stringify({ messages: fallbackData.messages || [] }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const fbText = await fallbackResponse.text();
+      console.warn('Nomi API warning (rooms/chat):', fallbackResponse.status, fbText);
+
+      // Gracefully return empty array to keep UI working and silence 404 noise
       return new Response(
-        JSON.stringify({ messages: messagesData.messages || [] }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+        JSON.stringify({ messages: [] }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -263,15 +260,24 @@ serve(async (req) => {
           'Authorization': NOMI_API_KEY,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          nomiUuid
-        }),
+        body: JSON.stringify({ nomiUuid }),
       });
 
       if (!requestResponse.ok) {
         const errorText = await requestResponse.text();
-        console.error('Nomi API error:', requestResponse.status, errorText);
-        throw new Error(`Nomi API error: ${requestResponse.status}`);
+        // Handle known transient state without surfacing a 500 to the client
+        if (requestResponse.status === 400 && errorText.includes('RoomNomiNotReadyForMessage')) {
+          console.info('Nomi not ready for message yet, returning non-fatal response');
+          return new Response(
+            JSON.stringify({ success: false, reason: 'not_ready', timestamp: new Date().toISOString() }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        console.error('Nomi API error (request-chat):', requestResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `Nomi API error: ${requestResponse.status}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
       const responseData = await requestResponse.json();
@@ -284,9 +290,7 @@ serve(async (req) => {
           response: responseData,
           timestamp: new Date().toISOString()
         }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
