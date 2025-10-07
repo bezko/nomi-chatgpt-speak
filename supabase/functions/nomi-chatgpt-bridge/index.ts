@@ -139,7 +139,7 @@ serve(async (req) => {
       
       console.log(`Adding nomi ${nomiUuid} to room ${roomId}`);
       
-      const addResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/nomis`, {
+      const addResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/nomi`, {
         method: 'POST',
         headers: {
           'Authorization': NOMI_API_KEY,
@@ -228,7 +228,7 @@ serve(async (req) => {
 
     // Handle request-chat action (request chat from Nomi in room)
     if (body.action === 'request-chat') {
-      const { roomId } = body;
+      const { roomId, nomiUuid } = body;
       
       if (!roomId) {
         throw new Error('roomId is required');
@@ -242,6 +242,9 @@ serve(async (req) => {
           'Authorization': NOMI_API_KEY,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          nomiUuid
+        }),
       });
 
       if (!requestResponse.ok) {
