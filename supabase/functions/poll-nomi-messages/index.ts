@@ -9,6 +9,13 @@ const corsHeaders = {
 
 const MAX_MESSAGE_LENGTH = 800;
 
+// Strip inner monologue (text between single asterisks *like this*)
+function stripInnerMonologue(text: string): string {
+  // Remove text between single asterisks (but not double asterisks for bold)
+  // Pattern matches *text* but not **text**
+  return text.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '').trim();
+}
+
 // Trim text to max length at the last punctuation mark
 function trimToLastPunctuation(text: string, maxLength: number = MAX_MESSAGE_LENGTH): string {
   if (text.length <= maxLength) return text;
@@ -129,13 +136,16 @@ serve(async (req) => {
                 continue;
               }
 
-              // Check if message is a question (ends with '?')
-              if (message.text && message.text.trim().endsWith('?')) {
+              // Strip inner monologue before processing
+              const messageWithoutMonologue = stripInnerMonologue(message.text);
+
+              // Check if message is a question (ends with '?') - check the stripped version
+              if (messageWithoutMonologue && messageWithoutMonologue.trim().endsWith('?')) {
                 // This is a question - process it with AI
-                const question = message.text;
+                const question = messageWithoutMonologue;
                 console.log(`Found question to process from ${nomi.name}:`, question);
 
-                // Call Lovable AI
+                // Call Lovable AI (send stripped question without inner monologue)
                 const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
                   method: 'POST',
                   headers: {
