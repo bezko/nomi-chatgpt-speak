@@ -184,8 +184,7 @@ serve(async (req) => {
         body: JSON.stringify({
           name: room.name,
           backchannelingEnabled: room.backchannelingEnabled,
-          nomiUuids: updatedNomiUuids,
-          note: room.note
+          nomiUuids: updatedNomiUuids
         }),
       });
 
