@@ -137,34 +137,60 @@ serve(async (req) => {
     if (body.action === 'add-nomi-to-room') {
       const { roomId, nomiUuid } = body;
       
+      if (!roomId || !nomiUuid) {
+        return new Response(
+          JSON.stringify({ error: 'roomId and nomiUuid are required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       console.log(`Adding nomi ${nomiUuid} to room ${roomId}`);
-      
-      const addResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/nomis`, {
+
+      // Try path-style endpoint first: POST /v1/rooms/{roomId}/nomis/{nomiUuid}
+      const primaryUrl = `https://api.nomi.ai/v1/rooms/${roomId}/nomis/${nomiUuid}`;
+      const primary = await fetch(primaryUrl, {
+        method: 'POST',
+        headers: { 'Authorization': NOMI_API_KEY },
+      });
+
+      if (primary.ok) {
+        const data = await primary.json().catch(() => ({}));
+        console.log('Added nomi via primary endpoint:', primaryUrl);
+        return new Response(
+          JSON.stringify({ success: true, response: data }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } else {
+        const txt = await primary.text();
+        console.warn('Nomi API warning (add primary):', primary.status, txt);
+      }
+
+      // Fallback: collection endpoint with array payload: POST /v1/rooms/{roomId}/nomis { nomiUuids: [..] }
+      const fallbackUrl = `https://api.nomi.ai/v1/rooms/${roomId}/nomis`;
+      const fallback = await fetch(fallbackUrl, {
         method: 'POST',
         headers: {
           'Authorization': NOMI_API_KEY,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          nomiUuid
-        }),
+        body: JSON.stringify({ nomiUuids: [nomiUuid] }),
       });
 
-      if (!addResponse.ok) {
-        const errorText = await addResponse.text();
-        console.error('Nomi API error:', addResponse.status, errorText);
-        throw new Error(`Nomi API error: ${addResponse.status}`);
+      if (fallback.ok) {
+        const data = await fallback.json().catch(() => ({}));
+        console.log('Added nomi via fallback endpoint:', fallbackUrl);
+        return new Response(
+          JSON.stringify({ success: true, response: data }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } else {
+        const fbTxt = await fallback.text();
+        console.error('Nomi API error (add fallback):', fallback.status, fbTxt);
+        return new Response(
+          JSON.stringify({ error: `Nomi API error: ${fallback.status}`, details: fbTxt }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
-
-      const responseData = await addResponse.json();
-      console.log('Nomi API add-nomi-to-room response:', JSON.stringify(responseData, null, 2));
-      
-      return new Response(
-        JSON.stringify({ success: true, response: responseData }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
     }
 
     // Handle remove-nomi-from-room action
