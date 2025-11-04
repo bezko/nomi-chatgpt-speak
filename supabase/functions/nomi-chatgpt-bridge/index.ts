@@ -6,12 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Parse /ask chatgpt "question" format
-function parseAskCommand(message: string): string | null {
-  const regex = /\/ask\s+chatgpt\s+"([^"]+)"/i;
-  const match = message.match(regex);
-  return match ? match[1] : null;
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -111,7 +105,7 @@ serve(async (req) => {
         body: JSON.stringify({
           name,
           backchannelingEnabled,
-          nomiUuids: ['d94ae61e-e606-45ec-8456-324d1e76c6aa'], // Paige
+          nomiUuids: [],
           note: 'Inquisitorium room for automated Q&A'
         }),
       });
@@ -209,29 +203,73 @@ serve(async (req) => {
     // Handle remove-nomi-from-room action
     if (body.action === 'remove-nomi-from-room') {
       const { roomId, nomiUuid } = body;
-      
-      console.log(`Removing nomi ${nomiUuid} from room ${roomId}`);
-      
-      const removeResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/nomis/${nomiUuid}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': NOMI_API_KEY,
-        },
-      });
 
-      if (!removeResponse.ok) {
-        const errorText = await removeResponse.text();
-        console.error('Nomi API error:', removeResponse.status, errorText);
-        throw new Error(`Nomi API error: ${removeResponse.status}`);
+      if (!roomId || !nomiUuid) {
+        return new Response(
+          JSON.stringify({ error: 'roomId and nomiUuid are required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
-      console.log('Nomi removed from room successfully');
-      
+      console.log(`Removing nomi ${nomiUuid} from room ${roomId}`);
+
+      // Fetch current room to get existing nomi UUIDs
+      const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms/', {
+        method: 'GET',
+        headers: { 'Authorization': NOMI_API_KEY },
+      });
+
+      if (!roomsResponse.ok) {
+        const errorText = await roomsResponse.text();
+        console.error('Failed to fetch rooms:', roomsResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `Failed to fetch rooms: ${roomsResponse.status}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const roomsData = await roomsResponse.json();
+      const room = roomsData.rooms?.find((r: any) => r.uuid === roomId);
+
+      if (!room) {
+        return new Response(
+          JSON.stringify({ error: 'Room not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const currentNomiUuids = (room.nomis || []).map((n: any) => n.uuid);
+      const updatedNomiUuids = currentNomiUuids.filter((uuid: string) => uuid !== nomiUuid);
+
+      // PUT the room with updated nomiUuids
+      const updateResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: room.name,
+          backchannelingEnabled: room.backchannelingEnabled,
+          nomiUuids: updatedNomiUuids
+        }),
+      });
+
+      if (!updateResponse.ok) {
+        const errorText = await updateResponse.text();
+        console.error('Nomi API error:', updateResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `Nomi API error: ${updateResponse.status}`, details: errorText }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const responseData = await updateResponse.json();
+      console.log('Nomi removed successfully via PUT /v1/rooms/{id}');
+
       return new Response(
-        JSON.stringify({ success: true }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+        JSON.stringify({ success: true, response: responseData }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -447,111 +485,14 @@ serve(async (req) => {
       );
     }
 
-    // Original webhook handling
-    const { nomiMessage, nomiUuid } = body;
-    
-    if (!nomiMessage) {
-      throw new Error('No nomiMessage provided');
-    }
-
-    if (!nomiUuid) {
-      throw new Error('No nomiUuid provided');
-    }
-
-    console.log('Received message from Nomi:', nomiMessage);
-    console.log('Nomi UUID:', nomiUuid);
-
-    // Parse the message for /ask chatgpt "question"
-    const question = parseAskCommand(nomiMessage);
-    
-    if (!question) {
-      console.log('Message does not match /ask chatgpt format, ignoring');
-      return new Response(
-        JSON.stringify({ 
-          ignored: true,
-          message: 'Message format not recognized'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    console.log('Extracted question:', question);
-
-    // Get Lovable API key
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
-    }
-
-    // Call Lovable AI (free Gemini)
-    console.log('Calling Lovable AI...');
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a helpful AI assistant. Provide clear, concise answers.'
-          },
-          {
-            role: 'user',
-            content: question
-          }
-        ],
-      }),
-    });
-
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error('Lovable AI error:', aiResponse.status, errorText);
-      throw new Error(`AI API error: ${aiResponse.status}`);
-    }
-
-    const aiData = await aiResponse.json();
-    const answer = aiData.choices[0].message.content;
-
-    console.log('AI answer:', answer);
-
-    // Send response back to Nomi
-    console.log('Sending reply to Nomi...');
-    const nomiResponse = await fetch(`https://api.nomi.ai/v1/nomis/${nomiUuid}/chat`, {
-      method: 'POST',
-      headers: {
-        'Authorization': NOMI_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messageText: answer
-      }),
-    });
-
-    if (!nomiResponse.ok) {
-      const errorText = await nomiResponse.text();
-      console.error('Nomi API error:', nomiResponse.status, errorText);
-      throw new Error(`Nomi API error: ${nomiResponse.status}`);
-    }
-
-    const nomiData = await nomiResponse.json();
-    console.log('Reply sent to Nomi successfully');
-    console.log('Nomi API reply response:', JSON.stringify(nomiData, null, 2));
-
+    // Unknown action
     return new Response(
-      JSON.stringify({ 
-        success: true,
-        question,
-        answer,
-        nomiResponse: nomiData,
+      JSON.stringify({
+        error: 'Unknown action',
         timestamp: new Date().toISOString()
       }),
       {
+        status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     );

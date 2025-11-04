@@ -7,11 +7,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function parseAskCommand(message: string): string | null {
-  const regex = /\/ask\s+chatgpt\s+"([^"]+)"/i;
-  const match = message.match(regex);
-  return match ? match[1] : null;
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -100,10 +95,23 @@ serve(async (req) => {
           for (const message of messagesData.messages) {
             // Only process messages from the Nomi (not user messages)
             if (message.sent === 'nomi') {
-              const question = parseAskCommand(message.text);
-              
-              if (question) {
-                // This is a chatgpt question - process it with AI
+              // Check if this message has already been processed
+              const { data: existingMessages } = await supabase
+                .from('nomi_messages')
+                .select('id')
+                .eq('nomi_uuid', nomi.uuid)
+                .eq('message_text', message.text)
+                .limit(1);
+
+              if (existingMessages && existingMessages.length > 0) {
+                console.log(`Message already processed, skipping: "${message.text.substring(0, 50)}..."`);
+                continue;
+              }
+
+              // Check if message is a question (ends with '?')
+              if (message.text && message.text.trim().endsWith('?')) {
+                // This is a question - process it with AI
+                const question = message.text;
                 console.log(`Found question to process from ${nomi.name}:`, question);
 
                 // Call Lovable AI
