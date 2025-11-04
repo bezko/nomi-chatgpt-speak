@@ -214,6 +214,9 @@ serve(async (req) => {
     }
 
     // Handle remove-nomi-from-room action
+    // NOTE: The Nomi API does not support removing Nomis from rooms
+    // All tested endpoints (DELETE, PATCH, PUT) return 404 EndpointNotFound
+    // The only way to change room membership is to delete and recreate the room
     if (body.action === 'remove-nomi-from-room') {
       const { roomId, nomiUuid } = body;
 

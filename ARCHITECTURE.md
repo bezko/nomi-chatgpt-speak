@@ -10,7 +10,7 @@ The application uses the **Nomi API as the single source of truth** for all Nomi
 - **Create Room**: Created via `POST /v1/rooms`
 - **Room Members**: Stored in Nomi API, fetched with room data
 - **Add Nomi to Room**: Updated via `PUT /v1/rooms/{roomId}` with updated `nomiUuids` array
-- **Remove Nomi from Room**: Updated via `PUT /v1/rooms/{roomId}` with filtered `nomiUuids` array
+- **Remove Nomi from Room**: ⚠️ **NOT SUPPORTED** - The Nomi API returns 404 EndpointNotFound for all removal methods (DELETE, PATCH, PUT)
 
 ### Message Storage
 
