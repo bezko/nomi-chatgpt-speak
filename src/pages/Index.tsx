@@ -112,7 +112,7 @@ const Index = () => {
       const formattedMessages: Message[] = (data || []).map(msg => ({
         id: msg.id,
         nomiName: msg.nomi_name || 'Unknown',
-        text: msg.message_text || '',  // Load full text including inner monologue
+        text: msg.message_text || msg.question || '',  // Support both new and old message formats
         answer: msg.answer || undefined,
         timestamp: msg.created_at,
         nomi_uuid: msg.nomi_uuid
@@ -409,7 +409,7 @@ const Index = () => {
           setMessages(prev => [...prev, {
             id: newMsg.id,
             nomiName: newMsg.nomi_name || 'Unknown',
-            text: newMsg.message_text || '',  // Load full text including inner monologue
+            text: newMsg.message_text || newMsg.question || '',  // Support both new and old message formats
             answer: newMsg.answer || undefined,
             timestamp: newMsg.created_at,
             nomi_uuid: newMsg.nomi_uuid
