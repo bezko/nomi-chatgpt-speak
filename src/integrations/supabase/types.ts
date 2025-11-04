@@ -50,6 +50,33 @@ export type Database = {
         }
         Relationships: []
       }
+      selected_nomis: {
+        Row: {
+          created_at: string
+          id: string
+          nomi_name: string
+          nomi_uuid: string
+          room_name: string | null
+          room_uuid: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nomi_name: string
+          nomi_uuid: string
+          room_name?: string | null
+          room_uuid?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nomi_name?: string
+          nomi_uuid?: string
+          room_name?: string | null
+          room_uuid?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
