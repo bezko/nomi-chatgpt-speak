@@ -32,8 +32,8 @@ serve(async (req) => {
 
       if (!nomisResponse.ok) {
         const errorText = await nomisResponse.text();
-        console.error('Nomi API error:', nomisResponse.status, errorText);
-        throw new Error(`Nomi API error: ${nomisResponse.status}`);
+        console.error('Nomi API error (list-nomis):', nomisResponse.status, errorText);
+        throw new Error(`Nomi API error in list-nomis: ${nomisResponse.status} - ${errorText}`);
       }
 
       const nomisData = await nomisResponse.json();
@@ -64,8 +64,8 @@ serve(async (req) => {
 
       if (!roomsResponse.ok) {
         const errorText = await roomsResponse.text();
-        console.error('Nomi API error:', roomsResponse.status, errorText);
-        throw new Error(`Nomi API error: ${roomsResponse.status}`);
+        console.error('Nomi API error (list-rooms):', roomsResponse.status, errorText);
+        throw new Error(`Nomi API error in list-rooms: ${roomsResponse.status} - ${errorText}`);
       }
 
       const roomsData = await roomsResponse.json();
@@ -112,15 +112,25 @@ serve(async (req) => {
 
       if (!createResponse.ok) {
         const errorText = await createResponse.text();
-        console.error('Nomi API error:', createResponse.status, errorText);
-        throw new Error(`Nomi API error: ${createResponse.status}`);
+        console.error('Nomi API error (create-room):', createResponse.status, errorText);
+        throw new Error(`Nomi API error in create-room: ${createResponse.status} - ${errorText}`);
       }
 
       const roomData = await createResponse.json();
       console.log('Nomi API create-room response:', JSON.stringify(roomData, null, 2));
-      
+
+      // Normalize the response to match the format expected by the frontend
+      const normalizedRoom = {
+        id: roomData.uuid,
+        name: roomData.name,
+        nomis: (roomData.nomis || []).map((nomi: any) => ({
+          uuid: nomi.uuid,
+          name: nomi.name
+        }))
+      };
+
       return new Response(
-        JSON.stringify({ room: roomData }),
+        JSON.stringify({ room: normalizedRoom }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
@@ -169,6 +179,7 @@ serve(async (req) => {
       const updatedNomiUuids = Array.from(new Set([...currentNomiUuids, nomiUuid]));
 
       // PUT the room with updated nomiUuids
+      console.log(`[add-nomi-to-room] PUT /v1/rooms/${roomId} with nomiUuids:`, updatedNomiUuids);
       const updateResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}`, {
         method: 'PUT',
         headers: {
@@ -184,9 +195,11 @@ serve(async (req) => {
 
       if (!updateResponse.ok) {
         const errorText = await updateResponse.text();
-        console.error('Nomi API error:', updateResponse.status, errorText);
+        console.error('Nomi API error (add-nomi-to-room PUT):', updateResponse.status, errorText);
+        console.error('Request: PUT /v1/rooms/' + roomId);
+        console.error('Body:', JSON.stringify({ name: room.name, backchannelingEnabled: room.backchannelingEnabled, nomiUuids: updatedNomiUuids }));
         return new Response(
-          JSON.stringify({ error: `Nomi API error: ${updateResponse.status}`, details: errorText }),
+          JSON.stringify({ error: `Nomi API error in add-nomi-to-room: ${updateResponse.status}`, details: errorText }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -242,6 +255,7 @@ serve(async (req) => {
       const updatedNomiUuids = currentNomiUuids.filter((uuid: string) => uuid !== nomiUuid);
 
       // PUT the room with updated nomiUuids
+      console.log(`[remove-nomi-from-room] PUT /v1/rooms/${roomId} with nomiUuids:`, updatedNomiUuids);
       const updateResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}`, {
         method: 'PUT',
         headers: {
@@ -257,9 +271,11 @@ serve(async (req) => {
 
       if (!updateResponse.ok) {
         const errorText = await updateResponse.text();
-        console.error('Nomi API error:', updateResponse.status, errorText);
+        console.error('Nomi API error (remove-nomi-from-room PUT):', updateResponse.status, errorText);
+        console.error('Request: PUT /v1/rooms/' + roomId);
+        console.error('Body:', JSON.stringify({ name: room.name, backchannelingEnabled: room.backchannelingEnabled, nomiUuids: updatedNomiUuids }));
         return new Response(
-          JSON.stringify({ error: `Nomi API error: ${updateResponse.status}`, details: errorText }),
+          JSON.stringify({ error: `Nomi API error in remove-nomi-from-room: ${updateResponse.status}`, details: errorText }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
