@@ -239,8 +239,8 @@ const Index = () => {
             nomi_uuid: nomi.uuid
           };
 
+          // Save to DB only - realtime subscription will update UI
           await saveMessageToDB(newMessage);
-          setMessages(prev => [...prev, newMessage]);
         } else {
           // Send default response
           await supabase.functions.invoke('nomi-chatgpt-bridge', {
@@ -260,8 +260,8 @@ const Index = () => {
             nomi_uuid: nomi.uuid
           };
 
+          // Save to DB only - realtime subscription will update UI
           await saveMessageToDB(newMessage);
-          setMessages(prev => [...prev, newMessage]);
         }
       } catch (error) {
         console.error(`Error polling nomi ${nomi.name}:`, error);
