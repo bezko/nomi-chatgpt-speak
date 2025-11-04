@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, UserPlus, UserMinus, MessageSquare } from "lucide-react";
+import { Loader2, UserPlus, UserMinus, MessageSquare, Copy } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Nomi {
@@ -18,10 +18,12 @@ interface Room {
 }
 
 interface Message {
+  id?: string;
   nomiName: string;
   text: string;
   answer?: string;
   timestamp: string;
+  nomi_uuid?: string;
 }
 
 const ROOM_NAME = "Inquisitorium";
@@ -34,6 +36,61 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const loadMessagesFromDB = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('nomi_messages')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      const formattedMessages: Message[] = (data || []).map(msg => ({
+        id: msg.id,
+        nomiName: msg.nomi_name || 'Unknown',
+        text: msg.question || msg.message_text || '',
+        answer: msg.answer || undefined,
+        timestamp: msg.created_at,
+        nomi_uuid: msg.nomi_uuid
+      }));
+
+      setMessages(formattedMessages);
+    } catch (error) {
+      console.error('Error loading messages:', error);
+    }
+  };
+
+  const saveMessageToDB = async (message: Message) => {
+    try {
+      await supabase.from('nomi_messages').insert({
+        nomi_uuid: message.nomi_uuid || '',
+        nomi_name: message.nomiName,
+        question: message.text,
+        answer: message.answer,
+        message_text: message.text,
+        message_type: message.answer ? 'ai_response' : 'regular'
+      });
+    } catch (error) {
+      console.error('Error saving message:', error);
+    }
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({
+        title: "Copied!",
+        description: "Message copied to clipboard",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to copy to clipboard",
+        variant: "destructive",
+      });
+    }
+  };
 
   const fetchNomis = async () => {
     const { data, error } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
@@ -174,12 +231,16 @@ const Index = () => {
             }
           });
 
-          setMessages(prev => [...prev, {
+          const newMessage = {
             nomiName: nomi.name,
             text: messageText,
             answer,
-            timestamp: new Date().toISOString()
-          }]);
+            timestamp: new Date().toISOString(),
+            nomi_uuid: nomi.uuid
+          };
+
+          await saveMessageToDB(newMessage);
+          setMessages(prev => [...prev, newMessage]);
         } else {
           // Send default response
           await supabase.functions.invoke('nomi-chatgpt-bridge', {
@@ -191,12 +252,16 @@ const Index = () => {
             }
           });
 
-          setMessages(prev => [...prev, {
+          const newMessage = {
             nomiName: nomi.name,
             text: messageText,
             answer: "Ask me a question",
-            timestamp: new Date().toISOString()
-          }]);
+            timestamp: new Date().toISOString(),
+            nomi_uuid: nomi.uuid
+          };
+
+          await saveMessageToDB(newMessage);
+          setMessages(prev => [...prev, newMessage]);
         }
       } catch (error) {
         console.error(`Error polling nomi ${nomi.name}:`, error);
@@ -241,6 +306,35 @@ const Index = () => {
 
   useEffect(() => {
     initializeRoom();
+    loadMessagesFromDB();
+
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('nomi_messages_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'nomi_messages'
+        },
+        (payload) => {
+          const newMsg = payload.new as any;
+          setMessages(prev => [...prev, {
+            id: newMsg.id,
+            nomiName: newMsg.nomi_name || 'Unknown',
+            text: newMsg.question || newMsg.message_text || '',
+            answer: newMsg.answer || undefined,
+            timestamp: newMsg.created_at,
+            nomi_uuid: newMsg.nomi_uuid
+          }]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -354,16 +448,34 @@ const Index = () => {
               ) : (
                 <div className="space-y-4">
                   {messages.map((msg, idx) => (
-                    <div key={idx} className="space-y-1 border-b pb-3">
-                      <div className="text-xs text-muted-foreground">
-                        {new Date(msg.timestamp).toLocaleString()} - {msg.nomiName}
+                    <div key={msg.id || idx} className="space-y-2 border-b pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-muted-foreground">
+                          {new Date(msg.timestamp).toLocaleString()} - {msg.nomiName}
+                        </div>
                       </div>
-                      <div className="text-sm">
+                      <div className="text-sm bg-secondary/30 p-2 rounded relative group">
                         <strong>Q:</strong> {msg.text}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => copyToClipboard(msg.text)}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
                       </div>
                       {msg.answer && (
-                        <div className="text-sm text-primary">
+                        <div className="text-sm bg-primary/10 p-2 rounded relative group">
                           <strong>A:</strong> {msg.answer}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => copyToClipboard(msg.answer!)}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
                         </div>
                       )}
                     </div>
