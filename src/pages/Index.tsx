@@ -55,6 +55,13 @@ const trimToLastPunctuation = (text: string, maxLength: number = MAX_MESSAGE_LEN
     : truncated;
 };
 
+// Strip inner monologue (text between single asterisks *like this*)
+const stripInnerMonologue = (text: string): string => {
+  // Remove text between single asterisks (but not double asterisks for bold)
+  // Pattern matches *text* but not **text**
+  return text.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '').trim();
+};
+
 // Parse text with **bold** markdown syntax
 const parseMarkdownBold = (text: string): (string | JSX.Element)[] => {
   const parts: (string | JSX.Element)[] = [];
@@ -105,7 +112,7 @@ const Index = () => {
       const formattedMessages: Message[] = (data || []).map(msg => ({
         id: msg.id,
         nomiName: msg.nomi_name || 'Unknown',
-        text: msg.question || msg.message_text || '',
+        text: msg.message_text || msg.question || '',  // Support both new and old message formats
         answer: msg.answer || undefined,
         timestamp: msg.created_at,
         nomi_uuid: msg.nomi_uuid
@@ -281,13 +288,14 @@ const Index = () => {
 
         const latestMessage = nomiMessages[nomiMessages.length - 1];
         const messageText = latestMessage.text;
-        
-        if (messageText.trim().endsWith('?')) {
-          // Ask ChatGPT
+        const messageWithoutMonologue = stripInnerMonologue(messageText);
+
+        if (messageWithoutMonologue.trim().endsWith('?')) {
+          // Ask ChatGPT (with inner monologue stripped)
           const { data: aiData, error: aiError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
-            body: { 
+            body: {
               action: 'ask-chatgpt',
-              question: messageText
+              question: messageWithoutMonologue
             }
           });
 
@@ -401,7 +409,7 @@ const Index = () => {
           setMessages(prev => [...prev, {
             id: newMsg.id,
             nomiName: newMsg.nomi_name || 'Unknown',
-            text: newMsg.question || newMsg.message_text || '',
+            text: newMsg.message_text || newMsg.question || '',  // Support both new and old message formats
             answer: newMsg.answer || undefined,
             timestamp: newMsg.created_at,
             nomi_uuid: newMsg.nomi_uuid
@@ -556,7 +564,7 @@ const Index = () => {
                         </div>
                       </div>
                       <div className="text-base font-sans leading-relaxed bg-secondary/30 p-3 rounded relative group">
-                        <strong>Q:</strong> {parseMarkdownBold(msg.text)}
+                        <strong>Q:</strong> {parseMarkdownBold(stripInnerMonologue(msg.text))}
                         <Button
                           size="sm"
                           variant="ghost"
@@ -568,7 +576,7 @@ const Index = () => {
                       </div>
                       {msg.answer && (
                         <div className="text-base font-sans leading-relaxed bg-primary/10 p-3 rounded relative group">
-                          <strong>A:</strong> {parseMarkdownBold(msg.answer)}
+                          <strong>A:</strong> {parseMarkdownBold(stripInnerMonologue(msg.answer))}
                           <Button
                             size="sm"
                             variant="ghost"
