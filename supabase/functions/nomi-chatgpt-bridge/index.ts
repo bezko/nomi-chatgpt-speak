@@ -146,49 +146,64 @@ serve(async (req) => {
 
       console.log(`Adding nomi ${nomiUuid} to room ${roomId}`);
 
-      const attempts: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }> = [
-        // Likely membership endpoints based on other working paths
-        { url: `https://api.nomi.ai/v1/nomis/${nomiUuid}/rooms/${roomId}`, method: 'POST', headers: { 'Authorization': NOMI_API_KEY } },
-        { url: `https://api.nomi.ai/v1/nomis/${nomiUuid}/rooms/${roomId}/join`, method: 'POST', headers: { 'Authorization': NOMI_API_KEY } },
-        { url: `https://api.nomi.ai/v1/rooms/${roomId}/nomis/${nomiUuid}`, method: 'POST', headers: { 'Authorization': NOMI_API_KEY } },
-        { url: `https://api.nomi.ai/v1/rooms/${roomId}/nomis`, method: 'POST', headers: { 'Authorization': NOMI_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ nomiUuids: [nomiUuid] }) },
-      ];
+      // Fetch current room to get existing nomi UUIDs
+      const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms/', {
+        method: 'GET',
+        headers: { 'Authorization': NOMI_API_KEY },
+      });
 
-      let lastNon404: { status: number; body: string } | null = null;
-
-      for (const a of attempts) {
-        try {
-          console.log(`Trying add-nomi endpoint: ${a.method} ${a.url}`);
-          const res = await fetch(a.url, { method: a.method, headers: a.headers, body: a.body });
-          if (res.ok) {
-            const data = await res.json().catch(() => ({}));
-            console.log('Nomi added via', a.url);
-            return new Response(
-              JSON.stringify({ success: true, response: data }),
-              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          }
-          const txt = await res.text();
-          console.warn('Add-nomi attempt failed:', res.status, txt);
-          if (res.status !== 404) {
-            lastNon404 = { status: res.status, body: txt };
-          }
-        } catch (e) {
-          console.error('Add-nomi attempt error:', e);
-        }
-      }
-
-      if (lastNon404) {
+      if (!roomsResponse.ok) {
+        const errorText = await roomsResponse.text();
+        console.error('Failed to fetch rooms:', roomsResponse.status, errorText);
         return new Response(
-          JSON.stringify({ error: `Nomi API error: ${lastNon404.status}`, details: lastNon404.body }),
+          JSON.stringify({ error: `Failed to fetch rooms: ${roomsResponse.status}` }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // All attempts returned 404 Not Found → surface as 404 with details
+      const roomsData = await roomsResponse.json();
+      const room = roomsData.rooms?.find((r: any) => r.uuid === roomId);
+      
+      if (!room) {
+        return new Response(
+          JSON.stringify({ error: 'Room not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const currentNomiUuids = (room.nomis || []).map((n: any) => n.uuid);
+      const updatedNomiUuids = Array.from(new Set([...currentNomiUuids, nomiUuid]));
+
+      // PUT the room with updated nomiUuids
+      const updateResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: room.name,
+          backchannelingEnabled: room.backchannelingEnabled,
+          nomiUuids: updatedNomiUuids,
+          note: room.note
+        }),
+      });
+
+      if (!updateResponse.ok) {
+        const errorText = await updateResponse.text();
+        console.error('Nomi API error:', updateResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `Nomi API error: ${updateResponse.status}`, details: errorText }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const responseData = await updateResponse.json();
+      console.log('Nomi added successfully via PUT /v1/rooms/{id}');
+      
       return new Response(
-        JSON.stringify({ error: 'EndpointNotFound', tried: attempts.map(a => `${a.method} ${a.url}`) }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: true, response: responseData }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
