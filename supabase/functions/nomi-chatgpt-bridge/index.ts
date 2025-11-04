@@ -136,7 +136,7 @@ serve(async (req) => {
     // Handle add-nomi-to-room action
     if (body.action === 'add-nomi-to-room') {
       const { roomId, nomiUuid } = body;
-      
+
       if (!roomId || !nomiUuid) {
         return new Response(
           JSON.stringify({ error: 'roomId and nomiUuid are required' }),
@@ -146,48 +146,77 @@ serve(async (req) => {
 
       console.log(`Adding nomi ${nomiUuid} to room ${roomId}`);
 
-      // Try path-style endpoint first: POST /v1/rooms/{roomId}/nomis/{nomiUuid}
-      const primaryUrl = `https://api.nomi.ai/v1/rooms/${roomId}/nomis/${nomiUuid}`;
-      const primary = await fetch(primaryUrl, {
-        method: 'POST',
+      // 1) Fetch current room to get existing nomi UUIDs
+      let currentNomiUuids: string[] = [];
+      const roomDetail = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}`, {
+        method: 'GET',
         headers: { 'Authorization': NOMI_API_KEY },
       });
 
-      if (primary.ok) {
-        const data = await primary.json().catch(() => ({}));
-        console.log('Added nomi via primary endpoint:', primaryUrl);
-        return new Response(
-          JSON.stringify({ success: true, response: data }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+      if (roomDetail.ok) {
+        const rd = await roomDetail.json().catch(() => ({}));
+        currentNomiUuids = (rd.nomis || []).map((n: any) => n.uuid).filter(Boolean);
       } else {
-        const txt = await primary.text();
-        console.warn('Nomi API warning (add primary):', primary.status, txt);
+        const detailText = await roomDetail.text();
+        console.warn('Could not fetch room details, falling back to list:', roomDetail.status, detailText);
+        const roomsResp = await fetch('https://api.nomi.ai/v1/rooms/', {
+          method: 'GET',
+          headers: { 'Authorization': NOMI_API_KEY },
+        });
+        if (roomsResp.ok) {
+          const roomsData = await roomsResp.json().catch(() => ({ rooms: [] }));
+          const match = (roomsData.rooms || []).find((r: any) => r.uuid === roomId || r.id === roomId);
+          if (match) currentNomiUuids = (match.nomis || []).map((n: any) => n.uuid).filter(Boolean);
+        }
       }
 
-      // Fallback: collection endpoint with array payload: POST /v1/rooms/{roomId}/nomis { nomiUuids: [..] }
-      const fallbackUrl = `https://api.nomi.ai/v1/rooms/${roomId}/nomis`;
-      const fallback = await fetch(fallbackUrl, {
-        method: 'POST',
+      const updated = Array.from(new Set([...(currentNomiUuids || []), nomiUuid]));
+
+      // 2) Try PATCH /v1/rooms/{roomId} with { nomiUuids }
+      const patchUrl = `https://api.nomi.ai/v1/rooms/${roomId}`;
+      const patch = await fetch(patchUrl, {
+        method: 'PATCH',
         headers: {
           'Authorization': NOMI_API_KEY,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ nomiUuids: [nomiUuid] }),
+        body: JSON.stringify({ nomiUuids: updated }),
       });
 
-      if (fallback.ok) {
-        const data = await fallback.json().catch(() => ({}));
-        console.log('Added nomi via fallback endpoint:', fallbackUrl);
+      if (patch.ok) {
+        const data = await patch.json().catch(() => ({}));
+        console.log('Updated room via PATCH with nomiUuids');
         return new Response(
           JSON.stringify({ success: true, response: data }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       } else {
-        const fbTxt = await fallback.text();
-        console.error('Nomi API error (add fallback):', fallback.status, fbTxt);
+        const txt = await patch.text();
+        console.warn('Nomi API warning (PATCH room):', patch.status, txt);
+      }
+
+      // 3) Fallback: PUT /v1/rooms/{roomId} with { nomiUuids }
+      const put = await fetch(patchUrl, {
+        method: 'PUT',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ nomiUuids: updated }),
+      });
+
+      if (put.ok) {
+        const data = await put.json().catch(() => ({}));
+        console.log('Updated room via PUT with nomiUuids');
         return new Response(
-          JSON.stringify({ error: `Nomi API error: ${fallback.status}`, details: fbTxt }),
+          JSON.stringify({ success: true, response: data }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } else {
+        const ptxt = await put.text();
+        console.error('Nomi API error (PUT room):', put.status, ptxt);
+        return new Response(
+          JSON.stringify({ error: `Nomi API error: ${put.status}`, details: ptxt }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -299,10 +328,10 @@ serve(async (req) => {
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
-        console.error('Nomi API error (request-chat):', requestResponse.status, errorText);
+        console.warn('Nomi API non-ok (request-chat):', requestResponse.status, errorText);
         return new Response(
-          JSON.stringify({ error: `Nomi API error: ${requestResponse.status}` }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ success: false, reason: 'upstream_error', upstreamStatus: requestResponse.status, upstreamBody: errorText, timestamp: new Date().toISOString() }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
