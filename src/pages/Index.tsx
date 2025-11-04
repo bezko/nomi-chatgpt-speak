@@ -503,7 +503,7 @@ const Index = () => {
                           {new Date(msg.timestamp).toLocaleString()} - {msg.nomiName}
                         </div>
                       </div>
-                      <div className="text-sm bg-secondary/30 p-2 rounded relative group">
+                      <div className="text-base font-sans leading-relaxed bg-secondary/30 p-3 rounded relative group">
                         <strong>Q:</strong> {msg.text}
                         <Button
                           size="sm"
@@ -515,7 +515,7 @@ const Index = () => {
                         </Button>
                       </div>
                       {msg.answer && (
-                        <div className="text-sm bg-primary/10 p-2 rounded relative group">
+                        <div className="text-base font-sans leading-relaxed bg-primary/10 p-3 rounded relative group">
                           <strong>A:</strong> {msg.answer}
                           <Button
                             size="sm"
