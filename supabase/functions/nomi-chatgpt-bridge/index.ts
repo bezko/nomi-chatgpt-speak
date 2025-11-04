@@ -224,7 +224,30 @@ serve(async (req) => {
         );
       }
 
-      console.log(`Removing nomi ${nomiUuid} from room ${roomId}`);
+      console.log(`[remove-nomi-from-room] Attempting to remove nomi ${nomiUuid} from room ${roomId}`);
+
+      // Try direct DELETE endpoint first
+      console.log(`[remove-nomi-from-room] Trying DELETE /v1/rooms/${roomId}/nomis/${nomiUuid}`);
+      const deleteResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/nomis/${nomiUuid}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+        },
+      });
+
+      if (deleteResponse.ok) {
+        console.log('[remove-nomi-from-room] Nomi removed successfully via DELETE endpoint');
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const deleteErrorText = await deleteResponse.text();
+      console.warn('[remove-nomi-from-room] DELETE endpoint failed:', deleteResponse.status, deleteErrorText);
+
+      // Fallback to PUT approach
+      console.log('[remove-nomi-from-room] Falling back to PUT approach...');
 
       // Fetch current room to get existing nomi UUIDs
       const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms', {
@@ -234,28 +257,58 @@ serve(async (req) => {
 
       if (!roomsResponse.ok) {
         const errorText = await roomsResponse.text();
-        console.error('Failed to fetch rooms (remove-nomi-from-room):', roomsResponse.status, errorText);
+        console.error('[remove-nomi-from-room] Failed to fetch rooms:', roomsResponse.status, errorText);
         return new Response(
-          JSON.stringify({ error: `Failed to fetch rooms: ${roomsResponse.status}` }),
+          JSON.stringify({ error: `Failed to fetch rooms: ${roomsResponse.status}`, details: errorText }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
       const roomsData = await roomsResponse.json();
+      console.log(`[remove-nomi-from-room] Fetched ${roomsData.rooms?.length || 0} rooms`);
       const room = roomsData.rooms?.find((r: any) => r.uuid === roomId);
 
       if (!room) {
+        console.error(`[remove-nomi-from-room] Room ${roomId} not found in ${roomsData.rooms?.length || 0} rooms`);
+        console.error('[remove-nomi-from-room] Available room IDs:', roomsData.rooms?.map((r: any) => r.uuid));
         return new Response(
-          JSON.stringify({ error: 'Room not found' }),
+          JSON.stringify({ error: 'Room not found', roomId, availableRooms: roomsData.rooms?.length || 0 }),
           { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
+      console.log(`[remove-nomi-from-room] Found room: ${room.name}, current nomis:`, room.nomis?.map((n: any) => n.uuid));
+
       const currentNomiUuids = (room.nomis || []).map((n: any) => n.uuid);
       const updatedNomiUuids = currentNomiUuids.filter((uuid: string) => uuid !== nomiUuid);
 
-      // PUT the room with updated nomiUuids
-      console.log(`[remove-nomi-from-room] PUT /v1/rooms/${roomId} with nomiUuids:`, updatedNomiUuids);
+      console.log(`[remove-nomi-from-room] Updated nomis list:`, updatedNomiUuids);
+
+      // Try PATCH endpoint
+      console.log(`[remove-nomi-from-room] Trying PATCH /v1/rooms/${roomId}`);
+      const patchResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ nomiUuids: updatedNomiUuids }),
+      });
+
+      if (patchResponse.ok) {
+        const patchData = await patchResponse.json();
+        console.log('[remove-nomi-from-room] Nomi removed successfully via PATCH');
+        return new Response(
+          JSON.stringify({ success: true, response: patchData }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const patchErrorText = await patchResponse.text();
+      console.error('[remove-nomi-from-room] PATCH failed:', patchResponse.status, patchErrorText);
+
+      // Try PUT as last resort
+      console.log(`[remove-nomi-from-room] Trying PUT /v1/rooms/${roomId}`);
       const updateResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}`, {
         method: 'PUT',
         headers: {
@@ -271,17 +324,21 @@ serve(async (req) => {
 
       if (!updateResponse.ok) {
         const errorText = await updateResponse.text();
-        console.error('Nomi API error (remove-nomi-from-room PUT):', updateResponse.status, errorText);
-        console.error('Request: PUT /v1/rooms/' + roomId);
-        console.error('Body:', JSON.stringify({ name: room.name, backchannelingEnabled: room.backchannelingEnabled, nomiUuids: updatedNomiUuids }));
+        console.error('[remove-nomi-from-room] PUT failed:', updateResponse.status, errorText);
+        console.error('[remove-nomi-from-room] Request body:', JSON.stringify({ name: room.name, backchannelingEnabled: room.backchannelingEnabled, nomiUuids: updatedNomiUuids }));
         return new Response(
-          JSON.stringify({ error: `Nomi API error in remove-nomi-from-room: ${updateResponse.status}`, details: errorText }),
+          JSON.stringify({
+            error: `All removal methods failed. DELETE: ${deleteResponse.status}, PATCH: ${patchResponse.status}, PUT: ${updateResponse.status}`,
+            deleteError: deleteErrorText,
+            patchError: patchErrorText,
+            putError: errorText
+          }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
       const responseData = await updateResponse.json();
-      console.log('Nomi removed successfully via PUT /v1/rooms/{id}');
+      console.log('[remove-nomi-from-room] Nomi removed successfully via PUT');
 
       return new Response(
         JSON.stringify({ success: true, response: responseData }),
