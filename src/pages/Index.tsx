@@ -126,7 +126,7 @@ const Index = () => {
     for (const nomi of room.nomis) {
       try {
         // Request chat from nomi
-        const { error: requestError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+        const { data: chatData, error: requestError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
           body: { 
             action: 'request-chat',
             roomId: room.id,
@@ -134,31 +134,19 @@ const Index = () => {
           }
         });
 
-        if (requestError) {
+        if (requestError || !chatData?.success) {
           console.error('Error requesting chat:', requestError);
           continue;
         }
 
-        // Wait a bit for response
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // Get messages
-      const { data: messagesData, error: messagesError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
-        body: { 
-          action: 'get-room-messages',
-          roomId: room.id
-        }
-      });
-
-        if (messagesError) {
-          console.error('Error getting messages:', messagesError);
+        // Use the replyMessage from the request-chat response
+        const replyMessage = chatData.response?.replyMessage;
+        if (!replyMessage || !replyMessage.text) {
+          console.log('No reply message received');
           continue;
         }
 
-        const lastMessage = messagesData?.messages?.[0];
-        if (!lastMessage || lastMessage.sent === 'user') continue;
-
-        const messageText = lastMessage.text;
+        const messageText = replyMessage.text;
         
         if (messageText.trim().endsWith('?')) {
           // Ask ChatGPT
