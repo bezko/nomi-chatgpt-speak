@@ -6,7 +6,7 @@ The application uses the **Nomi API as the single source of truth** for all Nomi
 
 ### Room Management
 
-- **List Rooms**: Fetched directly from `GET /v1/rooms/`
+- **List Rooms**: Fetched directly from `GET /v1/rooms`
 - **Create Room**: Created via `POST /v1/rooms`
 - **Room Members**: Stored in Nomi API, fetched with room data
 - **Add Nomi to Room**: Updated via `PUT /v1/rooms/{roomId}` with updated `nomiUuids` array

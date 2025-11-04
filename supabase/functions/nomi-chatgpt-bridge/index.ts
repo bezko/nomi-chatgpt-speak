@@ -55,7 +55,7 @@ serve(async (req) => {
     // Handle list-rooms action
     if (body.action === 'list-rooms') {
       console.log('Fetching list of rooms...');
-      const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms/', {
+      const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms', {
         method: 'GET',
         headers: {
           'Authorization': NOMI_API_KEY,
@@ -151,14 +151,14 @@ serve(async (req) => {
       console.log(`Adding nomi ${nomiUuid} to room ${roomId}`);
 
       // Fetch current room to get existing nomi UUIDs
-      const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms/', {
+      const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms', {
         method: 'GET',
         headers: { 'Authorization': NOMI_API_KEY },
       });
 
       if (!roomsResponse.ok) {
         const errorText = await roomsResponse.text();
-        console.error('Failed to fetch rooms:', roomsResponse.status, errorText);
+        console.error('Failed to fetch rooms (add-nomi-to-room):', roomsResponse.status, errorText);
         return new Response(
           JSON.stringify({ error: `Failed to fetch rooms: ${roomsResponse.status}` }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -227,14 +227,14 @@ serve(async (req) => {
       console.log(`Removing nomi ${nomiUuid} from room ${roomId}`);
 
       // Fetch current room to get existing nomi UUIDs
-      const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms/', {
+      const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms', {
         method: 'GET',
         headers: { 'Authorization': NOMI_API_KEY },
       });
 
       if (!roomsResponse.ok) {
         const errorText = await roomsResponse.text();
-        console.error('Failed to fetch rooms:', roomsResponse.status, errorText);
+        console.error('Failed to fetch rooms (remove-nomi-from-room):', roomsResponse.status, errorText);
         return new Response(
           JSON.stringify({ error: `Failed to fetch rooms: ${roomsResponse.status}` }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -383,6 +383,45 @@ serve(async (req) => {
           response: responseData,
           timestamp: new Date().toISOString()
         }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Handle get-nomi-messages action (get messages from specific Nomi)
+    if (body.action === 'get-nomi-messages') {
+      const { nomiUuid } = body;
+
+      if (!nomiUuid) {
+        return new Response(
+          JSON.stringify({ error: 'nomiUuid is required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log(`Fetching messages for Nomi ${nomiUuid}`);
+
+      const messagesResponse = await fetch(`https://api.nomi.ai/v1/nomis/${nomiUuid}/chat`, {
+        method: 'GET',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!messagesResponse.ok) {
+        const errorText = await messagesResponse.text();
+        console.error('Nomi API error (get-nomi-messages):', messagesResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `Nomi API error: ${messagesResponse.status}`, details: errorText }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const messagesData = await messagesResponse.json();
+      console.log(`Retrieved ${messagesData.messages?.length || 0} messages from Nomi ${nomiUuid}`);
+
+      return new Response(
+        JSON.stringify({ messages: messagesData.messages || [] }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

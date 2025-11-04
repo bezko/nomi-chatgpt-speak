@@ -182,28 +182,28 @@ const Index = () => {
 
     for (const nomi of room.nomis) {
       try {
-        // Request chat from nomi
-        const { data: chatData, error: requestError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
-          body: { 
-            action: 'request-chat',
-            roomId: room.id,
+        // Get recent messages from this Nomi
+        const { data: messagesData, error: messagesError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+          body: {
+            action: 'get-nomi-messages',
             nomiUuid: nomi.uuid
           }
         });
 
-        if (requestError || !chatData?.success) {
-          console.error('Error requesting chat:', requestError);
+        if (messagesError || !messagesData?.messages) {
+          console.error('Error fetching messages:', messagesError);
           continue;
         }
 
-        // Use the replyMessage from the request-chat response
-        const replyMessage = chatData.response?.replyMessage;
-        if (!replyMessage || !replyMessage.text) {
-          console.log('No reply message received');
+        // Get the most recent message from this Nomi (not from user)
+        const nomiMessages = messagesData.messages.filter((msg: any) => msg.sent === 'nomi');
+        if (nomiMessages.length === 0) {
+          console.log('No messages from Nomi yet');
           continue;
         }
 
-        const messageText = replyMessage.text;
+        const latestMessage = nomiMessages[nomiMessages.length - 1];
+        const messageText = latestMessage.text;
         
         if (messageText.trim().endsWith('?')) {
           // Ask ChatGPT
