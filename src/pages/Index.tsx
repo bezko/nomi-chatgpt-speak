@@ -150,8 +150,38 @@ const Index = () => {
     }
   };
 
-  // Note: Removing Nomis from rooms is not supported by the Nomi API
-  // The API only supports adding Nomis when creating/updating rooms
+  const removeNomiFromRoom = async (nomiUuid: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+        body: {
+          action: 'remove-nomi-from-room',
+          roomId: room?.id,
+          nomiUuid
+        }
+      });
+
+      if (error) throw error;
+
+      // The room was deleted and recreated with a new ID
+      if (data?.newRoomId) {
+        console.log('Room recreated with new ID:', data.newRoomId);
+        // Update the room with the new data
+        setRoom(data.room);
+      }
+
+      toast({
+        title: "Nomi removed",
+        description: "Room was recreated without the selected Nomi",
+      });
+    } catch (error: any) {
+      console.error('Error removing nomi:', error);
+      toast({
+        title: "Error",
+        description: "Failed to remove nomi from room",
+        variant: "destructive",
+      });
+    }
+  };
 
   const pollNomiMessages = async () => {
     if (!room || room.nomis.length === 0) return;
@@ -366,9 +396,14 @@ const Index = () => {
                   room?.nomis.map(nomi => (
                     <div key={nomi.uuid} className="flex items-center justify-between p-2 bg-secondary/20 rounded">
                       <span className="text-sm font-medium">{nomi.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        Note: Removing Nomis is not supported by the API
-                      </span>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => removeNomiFromRoom(nomi.uuid)}
+                        title="Removes Nomi by deleting and recreating the room"
+                      >
+                        <UserMinus className="h-4 w-4" />
+                      </Button>
                     </div>
                   ))
                 )}

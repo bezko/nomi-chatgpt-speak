@@ -10,7 +10,10 @@ The application uses the **Nomi API as the single source of truth** for all Nomi
 - **Create Room**: Created via `POST /v1/rooms`
 - **Room Members**: Stored in Nomi API, fetched with room data
 - **Add Nomi to Room**: Updated via `PUT /v1/rooms/{roomId}` with updated `nomiUuids` array
-- **Remove Nomi from Room**: ⚠️ **NOT SUPPORTED** - The Nomi API returns 404 EndpointNotFound for all removal methods (DELETE, PATCH, PUT)
+- **Remove Nomi from Room**: ⚠️ Workaround implemented
+  - The Nomi API doesn't support direct removal (all methods return 404)
+  - **Solution**: Delete the room (`DELETE /v1/rooms/{roomId}`) and recreate it (`POST /v1/rooms`) with the remaining Nomis
+  - Note: This generates a new room ID; chat history is preserved in the database
 
 ### Message Storage
 
