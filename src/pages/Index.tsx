@@ -36,6 +36,8 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 
   const loadMessagesFromDB = async () => {
     try {
@@ -90,6 +92,21 @@ const Index = () => {
         variant: "destructive",
       });
     }
+  };
+
+  // Check if user is scrolled near the bottom (within 100px)
+  const isNearBottom = () => {
+    if (!scrollAreaRef.current) return true;
+    const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+    if (!viewport) return true;
+
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    return scrollHeight - scrollTop - clientHeight < 100;
+  };
+
+  // Scroll to bottom of messages
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const fetchNomis = async () => {
@@ -358,6 +375,13 @@ const Index = () => {
     }
   }, [room]);
 
+  // Autoscroll to bottom when new messages arrive (only if user is near bottom)
+  useEffect(() => {
+    if (messages.length > 0 && isNearBottom()) {
+      scrollToBottom();
+    }
+  }, [messages]);
+
   const nomisNotInRoom = allNomis.filter(
     nomi => !room?.nomis.some(roomNomi => roomNomi.uuid === nomi.uuid)
   );
@@ -449,7 +473,7 @@ const Index = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-[400px] w-full rounded border p-4">
+            <ScrollArea className="h-[400px] w-full rounded border p-4" ref={scrollAreaRef}>
               {messages.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No messages yet. Polling will start automatically.</p>
               ) : (
@@ -487,6 +511,7 @@ const Index = () => {
                       )}
                     </div>
                   ))}
+                  <div ref={messagesEndRef} />
                 </div>
               )}
             </ScrollArea>
