@@ -30,6 +30,57 @@ interface Message {
 
 const ROOM_NAME = "Inquisitorium";
 const POLL_INTERVAL = 60000; // 1 minute
+const MAX_MESSAGE_LENGTH = 800; // Maximum characters for Nomi API
+
+// Trim text to max length at the last punctuation mark
+const trimToLastPunctuation = (text: string, maxLength: number = MAX_MESSAGE_LENGTH): string => {
+  if (text.length <= maxLength) return text;
+
+  const truncated = text.substring(0, maxLength);
+  const punctuationMarks = ['.', '!', '?', ';', ':', ','];
+
+  // Find the last punctuation mark
+  let lastPunctuationIndex = -1;
+  for (const mark of punctuationMarks) {
+    const index = truncated.lastIndexOf(mark);
+    if (index > lastPunctuationIndex) {
+      lastPunctuationIndex = index;
+    }
+  }
+
+  // If we found punctuation, trim there (including the punctuation)
+  // Otherwise, just trim at max length
+  return lastPunctuationIndex > 0
+    ? truncated.substring(0, lastPunctuationIndex + 1)
+    : truncated;
+};
+
+// Parse text with **bold** markdown syntax
+const parseMarkdownBold = (text: string): (string | JSX.Element)[] => {
+  const parts: (string | JSX.Element)[] = [];
+  const regex = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match;
+  let keyCounter = 0;
+
+  while ((match = regex.exec(text)) !== null) {
+    // Add text before the bold part
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+
+    // Add the bold text
+    parts.push(<strong key={`bold-${keyCounter++}`}>{match[1]}</strong>);
+    lastIndex = regex.lastIndex;
+  }
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : [text];
+};
 
 const Index = () => {
   const [allNomis, setAllNomis] = useState<Nomi[]>([]);
@@ -246,21 +297,22 @@ const Index = () => {
           }
 
           const answer = aiData?.answer || '';
+          const trimmedAnswer = trimToLastPunctuation(answer);
 
           // Send answer back to nomi
           await supabase.functions.invoke('nomi-chatgpt-bridge', {
-            body: { 
+            body: {
               action: 'send-message',
               nomiUuid: nomi.uuid,
               roomId: room.id,
-              message: answer
+              message: trimmedAnswer
             }
           });
 
           const newMessage = {
             nomiName: nomi.name,
             text: messageText,
-            answer,
+            answer: trimmedAnswer,
             timestamp: new Date().toISOString(),
             nomi_uuid: nomi.uuid
           };
@@ -504,7 +556,7 @@ const Index = () => {
                         </div>
                       </div>
                       <div className="text-base font-sans leading-relaxed bg-secondary/30 p-3 rounded relative group">
-                        <strong>Q:</strong> {msg.text}
+                        <strong>Q:</strong> {parseMarkdownBold(msg.text)}
                         <Button
                           size="sm"
                           variant="ghost"
@@ -516,7 +568,7 @@ const Index = () => {
                       </div>
                       {msg.answer && (
                         <div className="text-base font-sans leading-relaxed bg-primary/10 p-3 rounded relative group">
-                          <strong>A:</strong> {msg.answer}
+                          <strong>A:</strong> {parseMarkdownBold(msg.answer)}
                           <Button
                             size="sm"
                             variant="ghost"

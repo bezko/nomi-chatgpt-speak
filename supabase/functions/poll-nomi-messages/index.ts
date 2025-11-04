@@ -7,6 +7,27 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const MAX_MESSAGE_LENGTH = 800;
+
+// Trim text to max length at the last punctuation mark
+function trimToLastPunctuation(text: string, maxLength: number = MAX_MESSAGE_LENGTH): string {
+  if (text.length <= maxLength) return text;
+
+  const truncated = text.substring(0, maxLength);
+  const punctuationMarks = ['.', '!', '?', ';', ':', ','];
+
+  let lastPunctuationIndex = -1;
+  for (const mark of punctuationMarks) {
+    const index = truncated.lastIndexOf(mark);
+    if (index > lastPunctuationIndex) {
+      lastPunctuationIndex = index;
+    }
+  }
+
+  return lastPunctuationIndex > 0
+    ? truncated.substring(0, lastPunctuationIndex + 1)
+    : truncated;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -143,9 +164,13 @@ serve(async (req) => {
                 }
 
                 const aiData = await aiResponse.json();
-                const answer = aiData.choices[0].message.content;
+                const rawAnswer = aiData.choices[0].message.content;
+                const answer = trimToLastPunctuation(rawAnswer);
 
-                console.log('AI answer:', answer);
+                console.log('AI answer (trimmed):', answer);
+                if (rawAnswer.length > answer.length) {
+                  console.log(`Answer trimmed from ${rawAnswer.length} to ${answer.length} characters`);
+                }
 
                 // Send response back to Nomi
                 const nomiResponse = await fetch(`https://api.nomi.ai/v1/nomis/${nomi.uuid}/chat`, {
