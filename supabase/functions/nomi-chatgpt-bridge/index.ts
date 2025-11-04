@@ -214,42 +214,14 @@ serve(async (req) => {
     }
 
     // Handle remove-nomi-from-room action
+    // NOTE: The Nomi API does not support removing Nomis from rooms directly
+    // Workaround: Delete the room and recreate it with the remaining members
     if (body.action === 'remove-nomi-from-room') {
       const { roomId, nomiUuid } = body;
 
-      if (!roomId || !nomiUuid) {
-        return new Response(
-          JSON.stringify({ error: 'roomId and nomiUuid are required' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      console.log(`[remove-nomi-from-room] Removing ${nomiUuid} from room ${roomId} via delete/recreate`);
 
-      console.log(`[remove-nomi-from-room] Attempting to remove nomi ${nomiUuid} from room ${roomId}`);
-
-      // Try direct DELETE endpoint first
-      console.log(`[remove-nomi-from-room] Trying DELETE /v1/rooms/${roomId}/nomis/${nomiUuid}`);
-      const deleteResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/nomis/${nomiUuid}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': NOMI_API_KEY,
-        },
-      });
-
-      if (deleteResponse.ok) {
-        console.log('[remove-nomi-from-room] Nomi removed successfully via DELETE endpoint');
-        return new Response(
-          JSON.stringify({ success: true }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const deleteErrorText = await deleteResponse.text();
-      console.warn('[remove-nomi-from-room] DELETE endpoint failed:', deleteResponse.status, deleteErrorText);
-
-      // Fallback to PUT approach
-      console.log('[remove-nomi-from-room] Falling back to PUT approach...');
-
-      // Fetch current room to get existing nomi UUIDs
+      // Step 1: Fetch current room details
       const roomsResponse = await fetch('https://api.nomi.ai/v1/rooms', {
         method: 'GET',
         headers: { 'Authorization': NOMI_API_KEY },
@@ -259,58 +231,55 @@ serve(async (req) => {
         const errorText = await roomsResponse.text();
         console.error('[remove-nomi-from-room] Failed to fetch rooms:', roomsResponse.status, errorText);
         return new Response(
-          JSON.stringify({ error: `Failed to fetch rooms: ${roomsResponse.status}`, details: errorText }),
+          JSON.stringify({ error: `Failed to fetch rooms: ${roomsResponse.status}` }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
       const roomsData = await roomsResponse.json();
-      console.log(`[remove-nomi-from-room] Fetched ${roomsData.rooms?.length || 0} rooms`);
       const room = roomsData.rooms?.find((r: any) => r.uuid === roomId);
 
       if (!room) {
-        console.error(`[remove-nomi-from-room] Room ${roomId} not found in ${roomsData.rooms?.length || 0} rooms`);
-        console.error('[remove-nomi-from-room] Available room IDs:', roomsData.rooms?.map((r: any) => r.uuid));
+        console.error(`[remove-nomi-from-room] Room ${roomId} not found`);
         return new Response(
-          JSON.stringify({ error: 'Room not found', roomId, availableRooms: roomsData.rooms?.length || 0 }),
+          JSON.stringify({ error: 'Room not found' }),
           { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      console.log(`[remove-nomi-from-room] Found room: ${room.name}, current nomis:`, room.nomis?.map((n: any) => n.uuid));
-
+      // Step 2: Calculate remaining Nomis
       const currentNomiUuids = (room.nomis || []).map((n: any) => n.uuid);
-      const updatedNomiUuids = currentNomiUuids.filter((uuid: string) => uuid !== nomiUuid);
+      const remainingNomiUuids = currentNomiUuids.filter((uuid: string) => uuid !== nomiUuid);
 
-      console.log(`[remove-nomi-from-room] Updated nomis list:`, updatedNomiUuids);
-
-      // Try PATCH endpoint
-      console.log(`[remove-nomi-from-room] Trying PATCH /v1/rooms/${roomId}`);
-      const patchResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': NOMI_API_KEY,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ nomiUuids: updatedNomiUuids }),
-      });
-
-      if (patchResponse.ok) {
-        const patchData = await patchResponse.json();
-        console.log('[remove-nomi-from-room] Nomi removed successfully via PATCH');
+      if (remainingNomiUuids.length === 0) {
         return new Response(
-          JSON.stringify({ success: true, response: patchData }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ error: 'Cannot remove last Nomi from room. Delete the room instead.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const patchErrorText = await patchResponse.text();
-      console.error('[remove-nomi-from-room] PATCH failed:', patchResponse.status, patchErrorText);
+      console.log(`[remove-nomi-from-room] Remaining Nomis:`, remainingNomiUuids);
 
-      // Try PUT as last resort
-      console.log(`[remove-nomi-from-room] Trying PUT /v1/rooms/${roomId}`);
-      const updateResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}`, {
-        method: 'PUT',
+      // Step 3: Delete the existing room
+      const deleteResponse = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': NOMI_API_KEY },
+      });
+
+      if (!deleteResponse.ok) {
+        const errorText = await deleteResponse.text();
+        console.error('[remove-nomi-from-room] Failed to delete room:', deleteResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `Failed to delete room: ${deleteResponse.status}`, details: errorText }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log(`[remove-nomi-from-room] Room deleted successfully`);
+
+      // Step 4: Recreate room with remaining Nomis
+      const createResponse = await fetch('https://api.nomi.ai/v1/rooms', {
+        method: 'POST',
         headers: {
           'Authorization': NOMI_API_KEY,
           'Content-Type': 'application/json',
@@ -318,30 +287,37 @@ serve(async (req) => {
         body: JSON.stringify({
           name: room.name,
           backchannelingEnabled: room.backchannelingEnabled,
-          nomiUuids: updatedNomiUuids
+          nomiUuids: remainingNomiUuids,
+          note: room.note || 'Inquisitorium room for automated Q&A'
         }),
       });
 
-      if (!updateResponse.ok) {
-        const errorText = await updateResponse.text();
-        console.error('[remove-nomi-from-room] PUT failed:', updateResponse.status, errorText);
-        console.error('[remove-nomi-from-room] Request body:', JSON.stringify({ name: room.name, backchannelingEnabled: room.backchannelingEnabled, nomiUuids: updatedNomiUuids }));
+      if (!createResponse.ok) {
+        const errorText = await createResponse.text();
+        console.error('[remove-nomi-from-room] Failed to recreate room:', createResponse.status, errorText);
         return new Response(
-          JSON.stringify({
-            error: `All removal methods failed. DELETE: ${deleteResponse.status}, PATCH: ${patchResponse.status}, PUT: ${updateResponse.status}`,
-            deleteError: deleteErrorText,
-            patchError: patchErrorText,
-            putError: errorText
-          }),
+          JSON.stringify({ error: `Failed to recreate room: ${createResponse.status}`, details: errorText }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const responseData = await updateResponse.json();
-      console.log('[remove-nomi-from-room] Nomi removed successfully via PUT');
+      const newRoomData = await createResponse.json();
+      console.log(`[remove-nomi-from-room] Room recreated successfully with new ID: ${newRoomData.uuid}`);
 
       return new Response(
-        JSON.stringify({ success: true, response: responseData }),
+        JSON.stringify({
+          success: true,
+          message: 'Nomi removed by recreating room',
+          newRoomId: newRoomData.uuid,
+          room: {
+            id: newRoomData.uuid,
+            name: newRoomData.name,
+            nomis: (newRoomData.nomis || []).map((nomi: any) => ({
+              uuid: nomi.uuid,
+              name: nomi.name
+            }))
+          }
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

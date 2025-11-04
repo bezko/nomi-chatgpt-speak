@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { Loader2, UserPlus, UserMinus, MessageSquare, Copy } from "lucide-react";
@@ -34,8 +36,11 @@ const Index = () => {
   const [room, setRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [autoscrollEnabled, setAutoscrollEnabled] = useState(true);
   const { toast } = useToast();
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 
   const loadMessagesFromDB = async () => {
     try {
@@ -90,6 +95,21 @@ const Index = () => {
         variant: "destructive",
       });
     }
+  };
+
+  // Check if user is scrolled near the bottom (within 100px)
+  const isNearBottom = () => {
+    if (!scrollAreaRef.current) return true;
+    const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+    if (!viewport) return true;
+
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    return scrollHeight - scrollTop - clientHeight < 100;
+  };
+
+  // Scroll to bottom of messages
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const fetchNomis = async () => {
@@ -152,8 +172,8 @@ const Index = () => {
 
   const removeNomiFromRoom = async (nomiUuid: string) => {
     try {
-      const { error } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
-        body: { 
+      const { data, error } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+        body: {
           action: 'remove-nomi-from-room',
           roomId: room?.id,
           nomiUuid
@@ -162,10 +182,16 @@ const Index = () => {
 
       if (error) throw error;
 
-      await initializeRoom();
+      // The room was deleted and recreated with a new ID
+      if (data?.newRoomId) {
+        console.log('Room recreated with new ID:', data.newRoomId);
+        // Update the room with the new data
+        setRoom(data.room);
+      }
+
       toast({
         title: "Nomi removed",
-        description: "Nomi removed from room successfully",
+        description: "Room was recreated without the selected Nomi",
       });
     } catch (error: any) {
       console.error('Error removing nomi:', error);
@@ -352,6 +378,13 @@ const Index = () => {
     }
   }, [room]);
 
+  // Autoscroll to bottom when new messages arrive (only if enabled and user is near bottom)
+  useEffect(() => {
+    if (autoscrollEnabled && messages.length > 0 && isNearBottom()) {
+      scrollToBottom();
+    }
+  }, [messages, autoscrollEnabled]);
+
   const nomisNotInRoom = allNomis.filter(
     nomi => !room?.nomis.some(roomNomi => roomNomi.uuid === nomi.uuid)
   );
@@ -394,6 +427,7 @@ const Index = () => {
                         size="sm"
                         variant="destructive"
                         onClick={() => removeNomiFromRoom(nomi.uuid)}
+                        title="Removes Nomi by deleting and recreating the room"
                       >
                         <UserMinus className="h-4 w-4" />
                       </Button>
@@ -433,16 +467,31 @@ const Index = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5" />
-              Messages & Answers
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5" />
+                Messages & Answers
+              </CardTitle>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="autoscroll"
+                  checked={autoscrollEnabled}
+                  onCheckedChange={(checked) => setAutoscrollEnabled(checked as boolean)}
+                />
+                <Label
+                  htmlFor="autoscroll"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  Auto-scroll
+                </Label>
+              </div>
+            </div>
             <CardDescription>
               Questions ending with '?' are sent to ChatGPT
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-[400px] w-full rounded border p-4">
+            <ScrollArea className="h-[400px] w-full rounded border p-4" ref={scrollAreaRef}>
               {messages.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No messages yet. Polling will start automatically.</p>
               ) : (
@@ -454,7 +503,7 @@ const Index = () => {
                           {new Date(msg.timestamp).toLocaleString()} - {msg.nomiName}
                         </div>
                       </div>
-                      <div className="text-sm bg-secondary/30 p-2 rounded relative group">
+                      <div className="text-base font-sans leading-relaxed bg-secondary/30 p-3 rounded relative group">
                         <strong>Q:</strong> {msg.text}
                         <Button
                           size="sm"
@@ -466,7 +515,7 @@ const Index = () => {
                         </Button>
                       </div>
                       {msg.answer && (
-                        <div className="text-sm bg-primary/10 p-2 rounded relative group">
+                        <div className="text-base font-sans leading-relaxed bg-primary/10 p-3 rounded relative group">
                           <strong>A:</strong> {msg.answer}
                           <Button
                             size="sm"
@@ -480,6 +529,7 @@ const Index = () => {
                       )}
                     </div>
                   ))}
+                  <div ref={messagesEndRef} />
                 </div>
               )}
             </ScrollArea>
