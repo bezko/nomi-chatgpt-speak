@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { Loader2, UserPlus, UserMinus, MessageSquare, Copy } from "lucide-react";
@@ -34,6 +36,7 @@ const Index = () => {
   const [room, setRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [autoscrollEnabled, setAutoscrollEnabled] = useState(true);
   const { toast } = useToast();
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -375,12 +378,12 @@ const Index = () => {
     }
   }, [room]);
 
-  // Autoscroll to bottom when new messages arrive (only if user is near bottom)
+  // Autoscroll to bottom when new messages arrive (only if enabled and user is near bottom)
   useEffect(() => {
-    if (messages.length > 0 && isNearBottom()) {
+    if (autoscrollEnabled && messages.length > 0 && isNearBottom()) {
       scrollToBottom();
     }
-  }, [messages]);
+  }, [messages, autoscrollEnabled]);
 
   const nomisNotInRoom = allNomis.filter(
     nomi => !room?.nomis.some(roomNomi => roomNomi.uuid === nomi.uuid)
@@ -464,10 +467,25 @@ const Index = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5" />
-              Messages & Answers
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5" />
+                Messages & Answers
+              </CardTitle>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="autoscroll"
+                  checked={autoscrollEnabled}
+                  onCheckedChange={(checked) => setAutoscrollEnabled(checked as boolean)}
+                />
+                <Label
+                  htmlFor="autoscroll"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  Auto-scroll
+                </Label>
+              </div>
+            </div>
             <CardDescription>
               Questions ending with '?' are sent to ChatGPT
             </CardDescription>
