@@ -343,36 +343,52 @@ serve(async (req) => {
 
       console.log(`Sending message to Nomi ${nomiUuid} in room ${roomId}`);
       
-      const sendResponse = await fetch(`https://api.nomi.ai/v1/nomis/${nomiUuid}/rooms/${roomId}/chat`, {
+      // Try sending to the room first
+      const primary = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/chat`, {
         method: 'POST',
         headers: {
           'Authorization': NOMI_API_KEY,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          messageText: message
-        }),
+        body: JSON.stringify({ messageText: message }),
       });
 
-      if (!sendResponse.ok) {
-        const errorText = await sendResponse.text();
-        console.error('Nomi API error:', sendResponse.status, errorText);
-        throw new Error(`Nomi API error: ${sendResponse.status}`);
+      if (primary.ok) {
+        const data = await primary.json().catch(() => ({}));
+        console.log('Message sent to room successfully');
+        return new Response(
+          JSON.stringify({ success: true, response: data, timestamp: new Date().toISOString() }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
-      const responseData = await sendResponse.json();
-      console.log('Message sent successfully');
-      console.log('Nomi API send-message response:', JSON.stringify(responseData, null, 2));
-      
+      const primaryText = await primary.text();
+      console.warn('Room chat send not OK:', primary.status, primaryText);
+
+      // Fallback: direct nomi chat (outside room)
+      const fallback = await fetch(`https://api.nomi.ai/v1/nomis/${nomiUuid}/chat`, {
+        method: 'POST',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ messageText: message }),
+      });
+
+      if (fallback.ok) {
+        const data = await fallback.json().catch(() => ({}));
+        console.log('Message sent to nomi successfully (fallback)');
+        return new Response(
+          JSON.stringify({ success: true, response: data, timestamp: new Date().toISOString() }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const fbText = await fallback.text();
+      console.error('Send-message upstream error:', fallback.status, fbText);
       return new Response(
-        JSON.stringify({ 
-          success: true,
-          response: responseData,
-          timestamp: new Date().toISOString()
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+        JSON.stringify({ success: false, reason: 'upstream_error', upstreamStatus: fallback.status, upstreamBody: fbText, timestamp: new Date().toISOString() }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
