@@ -271,7 +271,8 @@ const Index = () => {
         const { data: messagesData, error: messagesError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
           body: {
             action: 'get-nomi-messages',
-            nomiUuid: nomi.uuid
+            nomiUuid: nomi.uuid,
+            roomId: room.id,
           }
         });
 
