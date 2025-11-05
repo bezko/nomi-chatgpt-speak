@@ -431,53 +431,17 @@ serve(async (req) => {
         );
       }
 
-      console.log(`Fetching messages for Nomi ${nomiUuid}${roomId ? ` in room ${roomId}` : ''}`);
-
-      // Try the direct Nomi chat endpoint first
-      const nomiResp = await fetch(`https://api.nomi.ai/v1/nomis/${nomiUuid}/chat`, {
-        method: 'GET',
-        headers: {
-          'Authorization': NOMI_API_KEY,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      // Helper to decide if we should fallback to room endpoints
-      const shouldFallback = async () => {
-        if (nomiResp.ok) return false;
-        const txt = await nomiResp.text();
-        console.warn('Nomi API non-ok (get-nomi-messages nomis/chat):', nomiResp.status, txt);
-        return nomiResp.status === 400 || nomiResp.status === 404 || txt.includes('No nomiMessage provided');
-      };
-
-      if (!(await shouldFallback())) {
-        // If upstream returned some other error, bubble it up
-        const txt = await nomiResp.text();
-        return new Response(
-          JSON.stringify({ error: `Nomi API error: ${nomiResp.status}`, details: txt }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // If direct endpoint worked, return messages
-      if (nomiResp.ok) {
-        const data = await nomiResp.json();
-        console.log(`Retrieved ${data.messages?.length || 0} messages from nomis/${nomiUuid}/chat`);
-        return new Response(
-          JSON.stringify({ messages: data.messages || [] }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // Fallback path: use room endpoints when available and filter by nomiUuid
+      // To avoid upstream 400 "No nomiMessage provided" from nomis/{uuid}/chat,
+      // we ONLY read messages via room endpoints and filter by nomiUuid.
       if (!roomId) {
-        // No roomId to fallback with; return graceful empty list instead of 500
-        console.info('[get-nomi-messages] Falling back to empty list (no roomId provided)');
+        console.warn('[get-nomi-messages] roomId missing, returning empty list to avoid upstream errors');
         return new Response(
           JSON.stringify({ messages: [] }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+
+      console.log(`[get-nomi-messages] Fetching messages for Nomi ${nomiUuid} in room ${roomId}`);
 
       // Try modern messages endpoint first
       const roomMessagesResp = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/messages`, {
@@ -491,7 +455,7 @@ serve(async (req) => {
         roomMessages = d.messages || [];
       } else {
         const t = await roomMessagesResp.text();
-        console.warn('Nomi API non-ok (rooms/messages):', roomMessagesResp.status, t);
+        console.warn('[get-nomi-messages] rooms/messages not OK:', roomMessagesResp.status, t);
         // Fallback to legacy chat endpoint
         const roomChatResp = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/chat`, {
           method: 'GET',
@@ -502,10 +466,11 @@ serve(async (req) => {
           roomMessages = d.messages || [];
         } else {
           const fbText = await roomChatResp.text();
-          console.error('Nomi API error (rooms/chat):', roomChatResp.status, fbText);
+          console.error('[get-nomi-messages] rooms/chat not OK:', roomChatResp.status, fbText);
+          // Gracefully return empty to avoid 500s in UI
           return new Response(
-            JSON.stringify({ error: `Nomi API error: ${roomChatResp.status}`, details: fbText }),
-            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            JSON.stringify({ messages: [] }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
       }
@@ -525,7 +490,7 @@ serve(async (req) => {
       };
 
       const filtered = (roomMessages || [])
-        .filter((m: any) => (m.sent === 'nomi' || m.sender === 'nomi' || m.from === 'nomi'))
+        .filter((m: any) => (m.sent === 'nomi' || m.sender === 'nomi' || m.from === 'nomi' || m.role === 'nomi'))
         .filter(belongsToNomi);
 
       console.log(`[get-nomi-messages] Returning ${filtered.length} messages for ${nomiUuid} from room ${roomId}`);
