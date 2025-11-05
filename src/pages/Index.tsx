@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { Loader2, UserPlus, UserMinus, MessageSquare, Copy } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { PasswordGate } from "@/components/PasswordGate";
 
 interface Nomi {
   uuid: string;
@@ -458,145 +459,147 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            Inquisitorium
-          </h1>
-          <p className="text-muted-foreground">Automated Q&A with Nomis</p>
-        </div>
+    <PasswordGate>
+      <div className="min-h-screen bg-background p-6">
+        <div className="max-w-6xl mx-auto space-y-6">
+          <div className="text-center space-y-2">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              Inquisitorium
+            </h1>
+            <p className="text-muted-foreground">Automated Q&A with Nomis</p>
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Room Members</CardTitle>
+                <CardDescription>
+                  Nomis in {ROOM_NAME} (polling every minute)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {room?.nomis.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No nomis in room</p>
+                  ) : (
+                    room?.nomis.map(nomi => (
+                      <div key={nomi.uuid} className="flex items-center justify-between p-2 bg-secondary/20 rounded">
+                        <span className="text-sm font-medium">{nomi.name}</span>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => removeNomiFromRoom(nomi.uuid)}
+                          title="Removes Nomi by deleting and recreating the room"
+                        >
+                          <UserMinus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Available Nomis</CardTitle>
+                <CardDescription>Add nomis to the room</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {nomisNotInRoom.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">All nomis are in the room</p>
+                  ) : (
+                    nomisNotInRoom.map(nomi => (
+                      <div key={nomi.uuid} className="flex items-center justify-between p-2 bg-secondary/20 rounded">
+                        <span className="text-sm font-medium">{nomi.name}</span>
+                        <Button
+                          size="sm"
+                          onClick={() => addNomiToRoom(nomi.uuid)}
+                        >
+                          <UserPlus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader>
-              <CardTitle>Room Members</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="h-5 w-5" />
+                  Messages & Answers
+                </CardTitle>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="autoscroll"
+                    checked={autoscrollEnabled}
+                    onCheckedChange={(checked) => setAutoscrollEnabled(checked as boolean)}
+                  />
+                  <Label
+                    htmlFor="autoscroll"
+                    className="text-sm font-normal cursor-pointer"
+                  >
+                    Auto-scroll
+                  </Label>
+                </div>
+              </div>
               <CardDescription>
-                Nomis in {ROOM_NAME} (polling every minute)
+                Questions ending with '?' are sent to ChatGPT
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {room?.nomis.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No nomis in room</p>
+              <ScrollArea className="h-[400px] w-full rounded border p-4" ref={scrollAreaRef}>
+                {messages.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No messages yet. Polling will start automatically.</p>
                 ) : (
-                  room?.nomis.map(nomi => (
-                    <div key={nomi.uuid} className="flex items-center justify-between p-2 bg-secondary/20 rounded">
-                      <span className="text-sm font-medium">{nomi.name}</span>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => removeNomiFromRoom(nomi.uuid)}
-                        title="Removes Nomi by deleting and recreating the room"
-                      >
-                        <UserMinus className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Available Nomis</CardTitle>
-              <CardDescription>Add nomis to the room</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {nomisNotInRoom.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">All nomis are in the room</p>
-                ) : (
-                  nomisNotInRoom.map(nomi => (
-                    <div key={nomi.uuid} className="flex items-center justify-between p-2 bg-secondary/20 rounded">
-                      <span className="text-sm font-medium">{nomi.name}</span>
-                      <Button
-                        size="sm"
-                        onClick={() => addNomiToRoom(nomi.uuid)}
-                      >
-                        <UserPlus className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5" />
-                Messages & Answers
-              </CardTitle>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="autoscroll"
-                  checked={autoscrollEnabled}
-                  onCheckedChange={(checked) => setAutoscrollEnabled(checked as boolean)}
-                />
-                <Label
-                  htmlFor="autoscroll"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  Auto-scroll
-                </Label>
-              </div>
-            </div>
-            <CardDescription>
-              Questions ending with '?' are sent to ChatGPT
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[400px] w-full rounded border p-4" ref={scrollAreaRef}>
-              {messages.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No messages yet. Polling will start automatically.</p>
-              ) : (
-                <div className="space-y-4">
-                  {messages.map((msg, idx) => (
-                    <div key={msg.id || idx} className="space-y-2 border-b pb-3">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-muted-foreground">
-                          {new Date(msg.timestamp).toLocaleString()} - {msg.nomiName}
+                  <div className="space-y-4">
+                    {messages.map((msg, idx) => (
+                      <div key={msg.id || idx} className="space-y-2 border-b pb-3">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(msg.timestamp).toLocaleString()} - {msg.nomiName}
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-base font-sans leading-relaxed bg-secondary/30 p-3 rounded relative group">
-                        <strong>Q:</strong> {parseMarkdownBold(stripInnerMonologue(msg.text))}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => copyToClipboard(msg.text)}
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      {msg.answer && (
-                        <div className="text-base font-sans leading-relaxed bg-primary/10 p-3 rounded relative group">
-                          <strong>A:</strong> {parseMarkdownBold(stripInnerMonologue(msg.answer))}
+                        <div className="text-base font-sans leading-relaxed bg-secondary/30 p-3 rounded relative group">
+                          <strong>Q:</strong> {parseMarkdownBold(stripInnerMonologue(msg.text))}
                           <Button
                             size="sm"
                             variant="ghost"
                             className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => copyToClipboard(msg.answer!)}
+                            onClick={() => copyToClipboard(msg.text)}
                           >
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
-                      )}
-                    </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
-              )}
-            </ScrollArea>
-          </CardContent>
-        </Card>
+                        {msg.answer && (
+                          <div className="text-base font-sans leading-relaxed bg-primary/10 p-3 rounded relative group">
+                            <strong>A:</strong> {parseMarkdownBold(stripInnerMonologue(msg.answer))}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => copyToClipboard(msg.answer!)}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </div>
+    </PasswordGate>
   );
 };
 
