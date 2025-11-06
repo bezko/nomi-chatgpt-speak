@@ -25,6 +25,7 @@ export type Database = {
           nomi_uuid: string
           processed_at: string
           question: string | null
+          user_id: string | null
         }
         Insert: {
           answer?: string | null
@@ -36,6 +37,7 @@ export type Database = {
           nomi_uuid: string
           processed_at?: string
           question?: string | null
+          user_id?: string | null
         }
         Update: {
           answer?: string | null
@@ -47,6 +49,7 @@ export type Database = {
           nomi_uuid?: string
           processed_at?: string
           question?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -58,6 +61,7 @@ export type Database = {
           nomi_uuid: string
           room_name: string | null
           room_uuid: string | null
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -66,6 +70,7 @@ export type Database = {
           nomi_uuid: string
           room_name?: string | null
           room_uuid?: string | null
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -74,6 +79,34 @@ export type Database = {
           nomi_uuid?: string
           room_name?: string | null
           room_uuid?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_api_keys: {
+        Row: {
+          created_at: string
+          id: string
+          nomi_api_key: string | null
+          openai_api_key: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nomi_api_key?: string | null
+          openai_api_key?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nomi_api_key?: string | null
+          openai_api_key?: string | null
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
