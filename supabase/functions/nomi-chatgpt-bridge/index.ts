@@ -1,11 +1,38 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper to get user API keys from database
+async function getUserApiKeys(userId: string) {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+
+  const { data, error } = await supabase
+    .from('user_api_keys')
+    .select('nomi_api_key, openai_api_key')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new Error('API keys not configured. Please add your keys in Settings.');
+  }
+
+  if (!data.nomi_api_key) {
+    throw new Error('Nomi API key not configured. Please add it in Settings.');
+  }
+
+  return {
+    nomiApiKey: data.nomi_api_key,
+    openaiApiKey: data.openai_api_key,
+  };
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -13,12 +40,39 @@ serve(async (req) => {
   }
 
   try {
-    const body = await req.json();
-    const NOMI_API_KEY = Deno.env.get('NOMI_API_KEY');
-    
-    if (!NOMI_API_KEY) {
-      throw new Error('NOMI_API_KEY is not configured');
+    // Get user from JWT
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Missing authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      {
+        global: {
+          headers: { Authorization: authHeader }
+        }
+      }
+    );
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get user's API keys
+    const { nomiApiKey, openaiApiKey } = await getUserApiKeys(user.id);
+
+    const body = await req.json();
+    const NOMI_API_KEY = nomiApiKey;
+    const OPENAI_API_KEY = openaiApiKey;
 
     // Handle list-nomis action
     if (body.action === 'list-nomis') {

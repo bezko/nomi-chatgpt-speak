@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, UserPlus, UserMinus, MessageSquare, Copy } from "lucide-react";
+import { Loader2, UserPlus, UserMinus, MessageSquare, Copy, Settings as SettingsIcon, LogOut } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { PasswordGate } from "@/components/PasswordGate";
+import type { User } from "@supabase/supabase-js";
 
 interface Nomi {
   uuid: string;
@@ -91,21 +92,24 @@ const parseMarkdownBold = (text: string): (string | JSX.Element)[] => {
 };
 
 const Index = () => {
+  const [user, setUser] = useState<User | null>(null);
   const [allNomis, setAllNomis] = useState<Nomi[]>([]);
   const [room, setRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [autoscrollEnabled, setAutoscrollEnabled] = useState(true);
+  const navigate = useNavigate();
   const { toast } = useToast();
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
 
-  const loadMessagesFromDB = async () => {
+  const loadMessagesFromDB = async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from('nomi_messages')
         .select('*')
+        .eq('user_id', userId)
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -126,8 +130,10 @@ const Index = () => {
   };
 
   const saveMessageToDB = async (message: Message) => {
+    if (!user) return;
     try {
       await supabase.from('nomi_messages').insert({
+        user_id: user.id,
         nomi_uuid: message.nomi_uuid || '',
         nomi_name: message.nomiName,
         question: message.text,
@@ -393,8 +399,28 @@ const Index = () => {
   };
 
   useEffect(() => {
-    initializeRoom();
-    loadMessagesFromDB();
+    // Check authentication
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate("/auth");
+        return;
+      }
+      setUser(session.user);
+      initializeRoom();
+      loadMessagesFromDB(session.user.id);
+    };
+
+    checkAuth();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        navigate("/auth");
+      } else {
+        setUser(session.user);
+      }
+    });
 
     // Subscribe to realtime updates
     const channel = supabase
@@ -421,6 +447,7 @@ const Index = () => {
       .subscribe();
 
     return () => {
+      subscription.unsubscribe();
       supabase.removeChannel(channel);
     };
   }, []);
@@ -459,16 +486,32 @@ const Index = () => {
     );
   }
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate("/auth");
+  };
+
   return (
-    <PasswordGate>
-      <div className="min-h-screen bg-background p-6">
-        <div className="max-w-6xl mx-auto space-y-6">
-          <div className="text-center space-y-2">
+    <div className="min-h-screen bg-background p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="text-center space-y-2 flex-1">
             <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
               Inquisitorium
             </h1>
             <p className="text-muted-foreground">Automated Q&A with Nomis</p>
           </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate("/settings")} className="gap-2">
+              <SettingsIcon className="h-4 w-4" />
+              Settings
+            </Button>
+            <Button variant="outline" onClick={handleSignOut} className="gap-2">
+              <LogOut className="h-4 w-4" />
+              Sign Out
+            </Button>
+          </div>
+        </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card>
@@ -600,7 +643,6 @@ const Index = () => {
           </Card>
         </div>
       </div>
-    </PasswordGate>
   );
 };
 
