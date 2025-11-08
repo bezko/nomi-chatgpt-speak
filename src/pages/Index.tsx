@@ -430,6 +430,15 @@ const Index = () => {
       }
     });
 
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Set up realtime subscription when user is available
+  useEffect(() => {
+    if (!user) return;
+
     // Subscribe to realtime updates for this user only
     const channel = supabase
       .channel('nomi_messages_changes')
@@ -439,7 +448,7 @@ const Index = () => {
           event: 'INSERT',
           schema: 'public',
           table: 'nomi_messages',
-          filter: `user_id=eq.${session.user.id}` // Filter by current user
+          filter: `user_id=eq.${user.id}` // Filter by current user
         },
         (payload) => {
           const newMsg = payload.new as any;
@@ -456,10 +465,9 @@ const Index = () => {
       .subscribe();
 
     return () => {
-      subscription.unsubscribe();
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     // Clear any existing interval first
