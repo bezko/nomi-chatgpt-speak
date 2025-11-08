@@ -237,7 +237,7 @@ const Index = () => {
 
   const removeNomiFromRoom = async (nomiUuid: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+      const { error } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
         body: {
           action: 'remove-nomi-from-room',
           roomId: room?.id,
@@ -247,13 +247,7 @@ const Index = () => {
 
       if (error) throw error;
 
-      // The room was deleted and recreated with a new ID
-      if (data?.newRoomId) {
-        console.log('Room recreated with new ID:', data.newRoomId);
-        // Update the room with the new data
-        setRoom(data.room);
-      }
-
+      await initializeRoom();
       toast({
         title: "Nomi removed",
         description: "Room was recreated without the selected Nomi",
