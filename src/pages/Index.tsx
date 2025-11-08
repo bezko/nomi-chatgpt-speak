@@ -430,7 +430,7 @@ const Index = () => {
       }
     });
 
-    // Subscribe to realtime updates
+    // Subscribe to realtime updates for this user only
     const channel = supabase
       .channel('nomi_messages_changes')
       .on(
@@ -438,7 +438,8 @@ const Index = () => {
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'nomi_messages'
+          table: 'nomi_messages',
+          filter: `user_id=eq.${session.user.id}` // Filter by current user
         },
         (payload) => {
           const newMsg = payload.new as any;
@@ -461,19 +462,29 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
+    // Clear any existing interval first
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+
     if (room && room.nomis.length > 0) {
       // Start polling
-      pollIntervalRef.current = setInterval(pollNomiMessages, POLL_INTERVAL);
+      pollIntervalRef.current = setInterval(() => {
+        pollNomiMessages();
+      }, POLL_INTERVAL);
+
       // Poll immediately
       pollNomiMessages();
-
-      return () => {
-        if (pollIntervalRef.current) {
-          clearInterval(pollIntervalRef.current);
-        }
-      };
     }
-  }, [room]);
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    };
+  }, [room, user]); // Added user to dependencies
 
   // Autoscroll to bottom when new messages arrive (only if enabled and user is near bottom)
   useEffect(() => {
