@@ -487,10 +487,14 @@ serve(async (req) => {
 
       console.log(`[get-nomi-messages] Fetching messages for Nomi ${nomiUuid}`);
 
-      // Use the direct Nomi chat endpoint to get messages
+      // Use the same endpoint as poll-nomi-messages
+      // Note: This only works if the Nomi is in a room
       const messagesResp = await fetch(`https://api.nomi.ai/v1/nomis/${nomiUuid}/chat`, {
         method: 'GET',
-        headers: { 'Authorization': NOMI_API_KEY },
+        headers: {
+          'Authorization': NOMI_API_KEY,
+          'Content-Type': 'application/json',
+        },
       });
 
       if (!messagesResp.ok) {
