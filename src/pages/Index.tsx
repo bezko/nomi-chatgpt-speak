@@ -407,6 +407,20 @@ const Index = () => {
         return;
       }
       setUser(session.user);
+
+      // Check if user has API keys
+      const { data: apiKeys } = await supabase
+        .from("user_api_keys")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      // If no API keys or either key is missing, redirect to settings
+      if (!apiKeys || !apiKeys.nomi_api_key || !apiKeys.openai_api_key) {
+        navigate("/settings");
+        return;
+      }
+
       initializeRoom();
       loadMessagesFromDB(session.user.id);
     };
