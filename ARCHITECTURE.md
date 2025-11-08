@@ -42,26 +42,24 @@ Messages ending with `?` are automatically:
 
 **Frontend Polling** (`Index.tsx`):
 - Polls every 60 seconds (configurable via `POLL_INTERVAL`)
-- For each Nomi in room:
-  - Requests chat via `POST /v1/rooms/{roomId}/chat/request`
-  - If response is a question → get AI answer → send reply
+- For each Nomi in the room:
+  - Fetches recent messages via `GET /v1/nomis/{nomiUuid}/chat`
+  - Checks if latest message is a question (ends with `?`)
+  - If question → get AI answer → send reply via `POST /v1/nomis/{nomiUuid}/chat`
   - If not a question → send "Ask me a question" prompt
-
-**Backend Function** (`poll-nomi-messages`):
-- Can be called independently to process all Nomis
-- Checks database for deduplication before processing
-- Stores all processed messages
+- All messages stored in database for history and deduplication
 
 ## Database Schema
 
 ### `nomi_messages`
 ```sql
 - id (UUID, PK)
+- user_id (UUID) - User who owns this message
 - nomi_uuid (TEXT) - Nomi identifier
 - nomi_name (TEXT) - Nomi display name
-- question (TEXT, nullable) - Original question
+- question (TEXT, nullable) - Original question (stripped of inner monologue)
 - answer (TEXT, nullable) - AI-generated answer
-- message_text (TEXT, nullable) - Full message text
+- message_text (TEXT, nullable) - Full message text (includes inner monologue)
 - message_type (TEXT) - 'chatgpt' | 'regular' | 'ai_response'
 - created_at (TIMESTAMP)
 - processed_at (TIMESTAMP)
@@ -70,12 +68,27 @@ Messages ending with `?` are automatically:
 **Indexes:**
 - `idx_nomi_messages_processed_at` on `processed_at DESC`
 - `idx_nomi_messages_nomi_uuid` on `nomi_uuid`
+- `idx_nomi_messages_user_id` on `user_id`
 
 **RLS Policies:**
-- Public read access (FOR SELECT)
-- Public insert access (FOR INSERT)
+- User-specific read access (users can only read their own messages)
+- User-specific insert access (users can only insert their own messages)
+- User-specific delete access (users can only delete their own messages)
 
 ## API Authentication
 
-- **Nomi API**: `Authorization: {NOMI_API_KEY}` header
-- **Lovable AI**: `Authorization: Bearer {LOVABLE_API_KEY}` header
+- **Nomi API**: User-specific API key stored in `user_api_keys` table
+- **Lovable AI**: System-wide `LOVABLE_API_KEY` environment variable
+
+### `user_api_keys`
+```sql
+- id (UUID, PK)
+- user_id (UUID, FK to auth.users)
+- nomi_api_key (TEXT) - User's Nomi API key
+- openai_api_key (TEXT, nullable) - User's OpenAI API key
+- created_at (TIMESTAMP)
+- updated_at (TIMESTAMP)
+```
+
+**RLS Policies:**
+- User-specific access (users can only access their own API keys)
