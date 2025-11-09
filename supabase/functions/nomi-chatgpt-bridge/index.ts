@@ -511,26 +511,25 @@ serve(async (req) => {
     // Handle ask-chatgpt action
     if (body.action === 'ask-chatgpt') {
       const { question } = body;
-      
+
       if (!question) {
         throw new Error('question is required');
       }
 
-      console.log('Asking ChatGPT:', question);
-
-      const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-      if (!LOVABLE_API_KEY) {
-        throw new Error('LOVABLE_API_KEY is not configured');
+      if (!OPENAI_API_KEY) {
+        throw new Error('OpenAI API key not configured. Please add it in Settings.');
       }
 
-      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      console.log('Asking OpenAI:', question);
+
+      const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
+          model: 'gpt-4o-mini',
           messages: [
             {
               role: 'system',
@@ -546,15 +545,15 @@ serve(async (req) => {
 
       if (!aiResponse.ok) {
         const errorText = await aiResponse.text();
-        console.error('Lovable AI error:', aiResponse.status, errorText);
-        throw new Error(`AI API error: ${aiResponse.status}`);
+        console.error('OpenAI API error:', aiResponse.status, errorText);
+        throw new Error(`OpenAI API error: ${aiResponse.status}`);
       }
 
       const aiData = await aiResponse.json();
       const answer = aiData.choices[0].message.content;
 
-      console.log('AI answer:', answer);
-      
+      console.log('OpenAI answer:', answer);
+
       return new Response(
         JSON.stringify({ answer }),
         {
