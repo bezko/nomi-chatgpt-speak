@@ -419,61 +419,91 @@ serve(async (req) => {
       );
     }
 
-    // Handle send-message action (send message to specific Nomi in specific room)
+    // Handle send-message action (request Nomi to post message in room)
     if (body.action === 'send-message') {
-      const { nomiUuid, roomId, message } = body;
-      
-      if (!nomiUuid || !message || !roomId) {
-        throw new Error('nomiUuid, roomId, and message are required');
+      const { nomiUuid, roomId } = body;
+
+      if (!nomiUuid || !roomId) {
+        throw new Error('nomiUuid and roomId are required');
       }
 
-      console.log(`Sending message to Nomi ${nomiUuid} in room ${roomId}`);
-      
-      // Try sending to the room first
-      const primary = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/chat`, {
+      console.log(`Requesting Nomi ${nomiUuid} to post in room ${roomId}`);
+
+      // Use the correct endpoint: POST /v1/rooms/:id/chat/request
+      // This requests the Nomi to post a message and returns their reply
+      const response = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/chat/request`, {
         method: 'POST',
         headers: {
           'Authorization': NOMI_API_KEY,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ messageText: message }),
+        body: JSON.stringify({ nomiUuid }),
       });
 
-      if (primary.ok) {
-        const data = await primary.json().catch(() => ({}));
-        console.log('Message sent to room successfully');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Nomi API error (chat/request):', response.status, errorText);
         return new Response(
-          JSON.stringify({ success: true, response: data, timestamp: new Date().toISOString() }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({
+            success: false,
+            reason: 'upstream_error',
+            upstreamStatus: response.status,
+            upstreamBody: errorText,
+            timestamp: new Date().toISOString()
+          }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const primaryText = await primary.text();
-      console.warn('Room chat send not OK:', primary.status, primaryText);
+      const data = await response.json();
+      console.log('Nomi posted message successfully:', data.replyMessage?.text?.substring(0, 50));
 
-      // Fallback: direct nomi chat (outside room)
-      const fallback = await fetch(`https://api.nomi.ai/v1/nomis/${nomiUuid}/chat`, {
-        method: 'POST',
-        headers: {
-          'Authorization': NOMI_API_KEY,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ messageText: message }),
-      });
-
-      if (fallback.ok) {
-        const data = await fallback.json().catch(() => ({}));
-        console.log('Message sent to nomi successfully (fallback)');
-        return new Response(
-          JSON.stringify({ success: true, response: data, timestamp: new Date().toISOString() }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const fbText = await fallback.text();
-      console.error('Send-message upstream error:', fallback.status, fbText);
       return new Response(
-        JSON.stringify({ success: false, reason: 'upstream_error', upstreamStatus: fallback.status, upstreamBody: fbText, timestamp: new Date().toISOString() }),
+        JSON.stringify({ success: true, response: data, timestamp: new Date().toISOString() }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Handle send-room-message action (send a user message to the room)
+    if (body.action === 'send-room-message') {
+      const { roomId, message } = body;
+
+      if (!roomId || !message) {
+        throw new Error('roomId and message are required');
+      }
+
+      console.log(`Sending user message to room ${roomId}`);
+
+      // Send a message to the room (as the user)
+      const response = await fetch(`https://api.nomi.ai/v1/rooms/${roomId}/chat`, {
+        method: 'POST',
+        headers: {
+          'Authorization': NOMI_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ messageText: message }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Nomi API error (send-room-message):', response.status, errorText);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            reason: 'upstream_error',
+            upstreamStatus: response.status,
+            upstreamBody: errorText,
+            timestamp: new Date().toISOString()
+          }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const data = await response.json();
+      console.log('User message sent to room successfully');
+
+      return new Response(
+        JSON.stringify({ success: true, response: data, timestamp: new Date().toISOString() }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

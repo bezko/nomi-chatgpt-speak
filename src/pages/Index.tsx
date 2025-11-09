@@ -267,13 +267,12 @@ const Index = () => {
 
     for (const nomi of room.nomis) {
       try {
-        // Send a prompt message to the Nomi - this will trigger a response
+        // Request the Nomi to post a message in the room
         const { data: sendData, error: sendError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
           body: {
             action: 'send-message',
             nomiUuid: nomi.uuid,
-            roomId: room.id,
-            message: "Ask me a question"
+            roomId: room.id
           }
         });
 
@@ -310,11 +309,10 @@ const Index = () => {
           const answer = aiData?.answer || '';
           const trimmedAnswer = trimToLastPunctuation(answer);
 
-          // Send answer back to nomi
+          // Send the ChatGPT answer back to the room
           await supabase.functions.invoke('nomi-chatgpt-bridge', {
             body: {
-              action: 'send-message',
-              nomiUuid: nomi.uuid,
+              action: 'send-room-message',
               roomId: room.id,
               message: trimmedAnswer
             }
