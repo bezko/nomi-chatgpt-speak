@@ -130,9 +130,12 @@ const Index = () => {
   };
 
   const saveMessageToDB = async (message: Message) => {
-    if (!user) return;
+    if (!user) {
+      console.error('Cannot save message: user not logged in');
+      return;
+    }
     try {
-      await supabase.from('nomi_messages').insert({
+      const messageData = {
         user_id: user.id,
         nomi_uuid: message.nomi_uuid || '',
         nomi_name: message.nomiName,
@@ -140,7 +143,18 @@ const Index = () => {
         answer: message.answer,
         message_text: message.text,
         message_type: message.answer ? 'ai_response' : 'regular'
-      });
+      };
+
+      console.log('Saving message to DB:', messageData);
+
+      const { data, error } = await supabase.from('nomi_messages').insert(messageData).select();
+
+      if (error) {
+        console.error('Error saving message to DB:', error);
+        throw error;
+      }
+
+      console.log('Message saved successfully:', data);
     } catch (error) {
       console.error('Error saving message:', error);
     }
@@ -300,8 +314,11 @@ const Index = () => {
         const messageText = nomiReply.text;
         const messageWithoutMonologue = stripInnerMonologue(messageText);
 
+        console.log(`[Polling] Nomi ${nomi.name} replied:`, messageWithoutMonologue);
+
         // Check if Nomi asked a question
         if (messageWithoutMonologue.trim().endsWith('?')) {
+          console.log(`[Polling] Detected question from ${nomi.name}`);
           // Ask ChatGPT (with inner monologue stripped)
           const { data: aiData, error: aiError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
             body: {
@@ -318,7 +335,10 @@ const Index = () => {
           const answer = aiData?.answer || '';
           const trimmedAnswer = trimToLastPunctuation(answer);
 
+          console.log(`[Polling] ChatGPT answer:`, trimmedAnswer);
+
           // Step 3: Send the ChatGPT answer to the room
+          console.log(`[Polling] Sending answer to room ${room.id}`);
           await supabase.functions.invoke('nomi-chatgpt-bridge', {
             body: {
               action: 'send-room-message',
@@ -328,6 +348,7 @@ const Index = () => {
           });
 
           // Step 4: Request Nomi to reply to the answer
+          console.log(`[Polling] Requesting ${nomi.name} to reply to answer`);
           await supabase.functions.invoke('nomi-chatgpt-bridge', {
             body: {
               action: 'send-message',
@@ -343,6 +364,8 @@ const Index = () => {
             timestamp: new Date().toISOString(),
             nomi_uuid: nomi.uuid
           };
+
+          console.log(`[Polling] Saving Q&A to database:`, newMessage);
 
           // Save to DB only - realtime subscription will update UI
           await saveMessageToDB(newMessage);
@@ -477,6 +500,8 @@ const Index = () => {
   useEffect(() => {
     if (!user) return;
 
+    console.log('[Realtime] Setting up subscription for user:', user.id);
+
     // Subscribe to realtime updates for this user only
     const channel = supabase
       .channel('nomi_messages_changes')
@@ -489,20 +514,26 @@ const Index = () => {
           filter: `user_id=eq.${user.id}` // Filter by current user
         },
         (payload) => {
+          console.log('[Realtime] New message inserted:', payload.new);
           const newMsg = payload.new as any;
-          setMessages(prev => [...prev, {
+          const formattedMsg = {
             id: newMsg.id,
             nomiName: newMsg.nomi_name || 'Unknown',
             text: newMsg.message_text || newMsg.question || '',  // Support both new and old message formats
             answer: newMsg.answer || undefined,
             timestamp: newMsg.created_at,
             nomi_uuid: newMsg.nomi_uuid
-          }]);
+          };
+          console.log('[Realtime] Adding message to UI:', formattedMsg);
+          setMessages(prev => [...prev, formattedMsg]);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[Realtime] Subscription status:', status);
+      });
 
     return () => {
+      console.log('[Realtime] Cleaning up subscription');
       supabase.removeChannel(channel);
     };
   }, [user]);
