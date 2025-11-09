@@ -267,31 +267,32 @@ const Index = () => {
 
     for (const nomi of room.nomis) {
       try {
-        // Get recent messages from this Nomi
-        const { data: messagesData, error: messagesError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+        // Send a prompt message to the Nomi - this will trigger a response
+        const { data: sendData, error: sendError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
           body: {
-            action: 'get-nomi-messages',
+            action: 'send-message',
             nomiUuid: nomi.uuid,
             roomId: room.id,
+            message: "Ask me a question"
           }
         });
 
-        if (messagesError || !messagesData?.messages) {
-          console.error('Error fetching messages:', messagesError);
+        if (sendError) {
+          console.error('Error sending message to Nomi:', sendError);
           continue;
         }
 
-        // Get the most recent message from this Nomi (not from user)
-        const nomiMessages = messagesData.messages.filter((msg: any) => msg.sent === 'nomi');
-        if (nomiMessages.length === 0) {
-          console.log('No messages from Nomi yet');
+        // The send-message response contains the Nomi's reply
+        const nomiReply = sendData?.response?.replyMessage;
+        if (!nomiReply || !nomiReply.text) {
+          console.log('No reply from Nomi yet');
           continue;
         }
 
-        const latestMessage = nomiMessages[nomiMessages.length - 1];
-        const messageText = latestMessage.text;
+        const messageText = nomiReply.text;
         const messageWithoutMonologue = stripInnerMonologue(messageText);
 
+        // Check if Nomi asked a question
         if (messageWithoutMonologue.trim().endsWith('?')) {
           // Ask ChatGPT (with inner monologue stripped)
           const { data: aiData, error: aiError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
@@ -330,20 +331,11 @@ const Index = () => {
           // Save to DB only - realtime subscription will update UI
           await saveMessageToDB(newMessage);
         } else {
-          // Send default response
-          await supabase.functions.invoke('nomi-chatgpt-bridge', {
-            body: { 
-              action: 'send-message',
-              nomiUuid: nomi.uuid,
-              roomId: room.id,
-              message: "Ask me a question"
-            }
-          });
-
+          // Just save the non-question message
           const newMessage = {
             nomiName: nomi.name,
             text: messageText,
-            answer: "Ask me a question",
+            answer: "(no question asked)",
             timestamp: new Date().toISOString(),
             nomi_uuid: nomi.uuid
           };
