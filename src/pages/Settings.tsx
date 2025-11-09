@@ -82,6 +82,9 @@ export default function Settings() {
         user_id: user.id,
         nomi_api_key: nomiApiKey,
         openai_api_key: openaiApiKey,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: 'user_id'
       });
 
     setLoading(false);
