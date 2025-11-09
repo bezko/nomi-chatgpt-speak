@@ -267,22 +267,30 @@ const Index = () => {
 
     for (const nomi of room.nomis) {
       try {
-        // Send a prompt message to the Nomi - this will trigger a response
-        const { data: sendData, error: sendError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+        // Step 1: Send a prompt to the room
+        await supabase.functions.invoke('nomi-chatgpt-bridge', {
           body: {
-            action: 'send-message',
-            nomiUuid: nomi.uuid,
+            action: 'send-room-message',
             roomId: room.id,
             message: "Ask me a question"
           }
         });
 
+        // Step 2: Request the Nomi to reply to that message
+        const { data: sendData, error: sendError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+          body: {
+            action: 'send-message',
+            nomiUuid: nomi.uuid,
+            roomId: room.id
+          }
+        });
+
         if (sendError) {
-          console.error('Error sending message to Nomi:', sendError);
+          console.error('Error requesting Nomi reply:', sendError);
           continue;
         }
 
-        // The send-message response contains the Nomi's reply
+        // The response contains the Nomi's reply
         const nomiReply = sendData?.response?.replyMessage;
         if (!nomiReply || !nomiReply.text) {
           console.log('No reply from Nomi yet');
@@ -310,13 +318,21 @@ const Index = () => {
           const answer = aiData?.answer || '';
           const trimmedAnswer = trimToLastPunctuation(answer);
 
-          // Send answer back to nomi
+          // Step 3: Send the ChatGPT answer to the room
+          await supabase.functions.invoke('nomi-chatgpt-bridge', {
+            body: {
+              action: 'send-room-message',
+              roomId: room.id,
+              message: trimmedAnswer
+            }
+          });
+
+          // Step 4: Request Nomi to reply to the answer
           await supabase.functions.invoke('nomi-chatgpt-bridge', {
             body: {
               action: 'send-message',
               nomiUuid: nomi.uuid,
-              roomId: room.id,
-              message: trimmedAnswer
+              roomId: room.id
             }
           });
 
