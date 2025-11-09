@@ -1,5 +1,5 @@
 -- Create user_api_keys table to store user-specific API keys
-CREATE TABLE public.user_api_keys (
+CREATE TABLE IF NOT EXISTS public.user_api_keys (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   nomi_api_key TEXT,
@@ -30,36 +30,16 @@ ON public.user_api_keys
 FOR UPDATE
 USING (auth.uid() = user_id);
 
--- Add user_id to selected_nomis (nullable for now to handle existing data)
-ALTER TABLE public.selected_nomis
-ADD COLUMN user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
-
 -- Add user_id to nomi_messages (nullable for now to handle existing data)
 ALTER TABLE public.nomi_messages
-ADD COLUMN user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+-- Create index for user_id lookups
+CREATE INDEX IF NOT EXISTS idx_nomi_messages_user_id ON public.nomi_messages(user_id);
 
 -- Drop old public policies
-DROP POLICY IF EXISTS "Allow public read access to selected_nomis" ON public.selected_nomis;
-DROP POLICY IF EXISTS "Allow public insert access to selected_nomis" ON public.selected_nomis;
-DROP POLICY IF EXISTS "Allow public delete access to selected_nomis" ON public.selected_nomis;
 DROP POLICY IF EXISTS "Allow public read access to nomi_messages" ON public.nomi_messages;
 DROP POLICY IF EXISTS "Allow public insert access to nomi_messages" ON public.nomi_messages;
-
--- Create user-specific policies for selected_nomis
-CREATE POLICY "Users can view their own selected nomis"
-ON public.selected_nomis
-FOR SELECT
-USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert their own selected nomis"
-ON public.selected_nomis
-FOR INSERT
-WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete their own selected nomis"
-ON public.selected_nomis
-FOR DELETE
-USING (auth.uid() = user_id);
 
 -- Create user-specific policies for nomi_messages
 CREATE POLICY "Users can view their own messages"
@@ -81,7 +61,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Add trigger for user_api_keys
+-- Add trigger for user_api_keys (drop first if exists)
+DROP TRIGGER IF EXISTS update_user_api_keys_updated_at ON public.user_api_keys;
 CREATE TRIGGER update_user_api_keys_updated_at
 BEFORE UPDATE ON public.user_api_keys
 FOR EACH ROW
