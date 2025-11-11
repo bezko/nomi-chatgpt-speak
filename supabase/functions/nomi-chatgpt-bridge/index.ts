@@ -16,7 +16,7 @@ async function getUserApiKeys(userId: string) {
 
   const { data, error } = await supabase
     .from('user_api_keys')
-    .select('nomi_api_key, openai_api_key')
+    .select('nomi_api_key, groq_api_key')
     .eq('user_id', userId)
     .maybeSingle();
 
@@ -30,7 +30,7 @@ async function getUserApiKeys(userId: string) {
 
   return {
     nomiApiKey: data.nomi_api_key,
-    openaiApiKey: data.openai_api_key,
+    groqApiKey: data.groq_api_key,
   };
 }
 
@@ -68,11 +68,11 @@ serve(async (req) => {
     }
 
     // Get user's API keys
-    const { nomiApiKey, openaiApiKey } = await getUserApiKeys(user.id);
+    const { nomiApiKey, groqApiKey } = await getUserApiKeys(user.id);
 
     const body = await req.json();
     const NOMI_API_KEY = nomiApiKey;
-    const OPENAI_API_KEY = openaiApiKey;
+    const GROQ_API_KEY = groqApiKey;
 
     // Handle list-nomis action
     if (body.action === 'list-nomis') {
@@ -516,20 +516,20 @@ serve(async (req) => {
         throw new Error('question is required');
       }
 
-      if (!OPENAI_API_KEY) {
-        throw new Error('OpenAI API key not configured. Please add it in Settings.');
+      if (!GROQ_API_KEY) {
+        throw new Error('Groq API key not configured. Please add it in Settings.');
       }
 
-      console.log('Asking OpenAI:', question);
+      console.log('Asking Groq (qwen3-32b):', question);
 
-      const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'qwen2.5-32b-instruct',
           messages: [
             {
               role: 'system',
@@ -545,14 +545,14 @@ serve(async (req) => {
 
       if (!aiResponse.ok) {
         const errorText = await aiResponse.text();
-        console.error('OpenAI API error:', aiResponse.status, errorText);
-        throw new Error(`OpenAI API error: ${aiResponse.status}`);
+        console.error('Groq API error:', aiResponse.status, errorText);
+        throw new Error(`Groq API error: ${aiResponse.status}`);
       }
 
       const aiData = await aiResponse.json();
       const answer = aiData.choices[0].message.content;
 
-      console.log('OpenAI answer:', answer);
+      console.log('Groq answer:', answer);
 
       return new Response(
         JSON.stringify({ answer }),
