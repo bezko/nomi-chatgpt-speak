@@ -471,7 +471,7 @@ const Index = () => {
         .maybeSingle();
 
       // If no API keys or either key is missing, redirect to settings
-      if (!apiKeys || !apiKeys.nomi_api_key || !apiKeys.openai_api_key) {
+      if (!apiKeys || !apiKeys.nomi_api_key || !apiKeys.groq_api_key) {
         navigate("/settings");
         return;
       }

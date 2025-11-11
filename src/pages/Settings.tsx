@@ -10,7 +10,7 @@ import { ArrowLeft, Key, LogOut } from "lucide-react";
 
 export default function Settings() {
   const [nomiApiKey, setNomiApiKey] = useState("");
-  const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [groqApiKey, setGroqApiKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [fetchingKeys, setFetchingKeys] = useState(true);
   const [isFirstSetup, setIsFirstSetup] = useState(false);
@@ -43,9 +43,9 @@ export default function Settings() {
 
     if (data) {
       setNomiApiKey(data.nomi_api_key || "");
-      setOpenaiApiKey(data.openai_api_key || "");
+      setGroqApiKey(data.groq_api_key || "");
       // If both keys exist, not first setup
-      setIsFirstSetup(!data.nomi_api_key || !data.openai_api_key);
+      setIsFirstSetup(!data.nomi_api_key || !data.groq_api_key);
     } else {
       // No data means first setup
       setIsFirstSetup(true);
@@ -58,7 +58,7 @@ export default function Settings() {
     e.preventDefault();
 
     // Validate both keys are present
-    if (!nomiApiKey.trim() || !openaiApiKey.trim()) {
+    if (!nomiApiKey.trim() || !groqApiKey.trim()) {
       toast({
         title: "Missing keys",
         description: "Both API keys are required",
@@ -81,7 +81,7 @@ export default function Settings() {
       .upsert({
         user_id: user.id,
         nomi_api_key: nomiApiKey,
-        openai_api_key: openaiApiKey,
+        groq_api_key: groqApiKey,
         updated_at: new Date().toISOString(),
       }, {
         onConflict: 'user_id'
@@ -182,23 +182,31 @@ export default function Settings() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="openai-key">OpenAI API Key</Label>
+                <Label htmlFor="groq-key">Groq API Key</Label>
                 <Input
-                  id="openai-key"
+                  id="groq-key"
                   type="password"
-                  placeholder="Enter your OpenAI API key"
-                  value={openaiApiKey}
-                  onChange={(e) => setOpenaiApiKey(e.target.value)}
+                  placeholder="Enter your Groq API key"
+                  value={groqApiKey}
+                  onChange={(e) => setGroqApiKey(e.target.value)}
                 />
                 <p className="text-sm text-muted-foreground">
-                  Get your OpenAI API key from the OpenAI platform
+                  Get your Groq API key from{" "}
+                  <a
+                    href="https://console.groq.com/keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    console.groq.com/keys
+                  </a>
                 </p>
               </div>
 
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={loading || !nomiApiKey.trim() || !openaiApiKey.trim()}
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading || !nomiApiKey.trim() || !groqApiKey.trim()}
               >
                 {loading ? "Saving..." : isFirstSetup ? "Continue to App" : "Save API Keys"}
               </Button>
