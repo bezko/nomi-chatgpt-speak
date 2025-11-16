@@ -296,66 +296,17 @@ const Index = () => {
           }
         });
 
-        // Step 2: Request the Nomi to reply to that message
-        const { data: sendData, error: sendError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
-          body: {
-            action: 'send-message',
-            nomiUuid: nomi.uuid,
-            roomId: room.id
-          }
-        });
+        // Keep retrying until Nomi asks a question (max 3 attempts)
+        let questionAsked = false;
+        let attemptCount = 0;
+        const MAX_ATTEMPTS = 3;
 
-        if (sendError) {
-          console.error('Error requesting Nomi reply:', sendError);
-          continue;
-        }
+        while (!questionAsked && attemptCount < MAX_ATTEMPTS) {
+          attemptCount++;
+          console.log(`[Polling] Attempt ${attemptCount}/${MAX_ATTEMPTS} for ${nomi.name}`);
 
-        // The response contains the Nomi's reply
-        const nomiReply = sendData?.response?.replyMessage;
-        if (!nomiReply || !nomiReply.text) {
-          console.log('No reply from Nomi yet');
-          continue;
-        }
-
-        const messageText = nomiReply.text;
-        const messageWithoutMonologue = stripInnerMonologue(messageText);
-
-        console.log(`[Polling] Nomi ${nomi.name} replied:`, messageWithoutMonologue);
-
-        // Check if Nomi asked a question
-        if (messageWithoutMonologue.trim().endsWith('?')) {
-          console.log(`[Polling] Detected question from ${nomi.name}`);
-          // Ask ChatGPT (with inner monologue stripped)
-          const { data: aiData, error: aiError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
-            body: {
-              action: 'ask-chatgpt',
-              question: messageWithoutMonologue
-            }
-          });
-
-          if (aiError) {
-            console.error('Error asking ChatGPT:', aiError);
-            continue;
-          }
-
-          const answer = aiData?.answer || '';
-          const trimmedAnswer = trimToLastPunctuation(answer);
-
-          console.log(`[Polling] ChatGPT answer:`, trimmedAnswer);
-
-          // Step 3: Send the ChatGPT answer to the room
-          console.log(`[Polling] Sending answer to room ${room.id}`);
-          await supabase.functions.invoke('nomi-chatgpt-bridge', {
-            body: {
-              action: 'send-room-message',
-              roomId: room.id,
-              message: trimmedAnswer
-            }
-          });
-
-          // Step 4: Request Nomi to reply to the answer
-          console.log(`[Polling] Requesting ${nomi.name} to reply to answer`);
-          await supabase.functions.invoke('nomi-chatgpt-bridge', {
+          // Step 2: Request the Nomi to reply to that message
+          const { data: sendData, error: sendError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
             body: {
               action: 'send-message',
               nomiUuid: nomi.uuid,
@@ -363,30 +314,94 @@ const Index = () => {
             }
           });
 
-          const newMessage = {
-            nomiName: nomi.name,
-            text: messageText,
-            answer: trimmedAnswer,
-            timestamp: new Date().toISOString(),
-            nomi_uuid: nomi.uuid
-          };
+          if (sendError) {
+            console.error('Error requesting Nomi reply:', sendError);
+            break;
+          }
 
-          console.log(`[Polling] Saving Q&A to database:`, newMessage);
+          // The response contains the Nomi's reply
+          const nomiReply = sendData?.response?.replyMessage;
+          if (!nomiReply || !nomiReply.text) {
+            console.log('No reply from Nomi yet');
+            break;
+          }
 
-          // Save to DB only - realtime subscription will update UI
-          await saveMessageToDB(newMessage);
-        } else {
-          // Just save the non-question message
-          const newMessage = {
-            nomiName: nomi.name,
-            text: messageText,
-            answer: "(no question asked)",
-            timestamp: new Date().toISOString(),
-            nomi_uuid: nomi.uuid
-          };
+          const messageText = nomiReply.text;
+          const messageWithoutMonologue = stripInnerMonologue(messageText);
 
-          // Save to DB only - realtime subscription will update UI
-          await saveMessageToDB(newMessage);
+          console.log(`[Polling] Nomi ${nomi.name} replied:`, messageWithoutMonologue);
+
+          // Check if Nomi asked a question
+          if (messageWithoutMonologue.trim().endsWith('?')) {
+            console.log(`[Polling] Detected question from ${nomi.name}`);
+            questionAsked = true;
+
+            // Ask ChatGPT (with inner monologue stripped)
+            const { data: aiData, error: aiError } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
+              body: {
+                action: 'ask-chatgpt',
+                question: messageWithoutMonologue
+              }
+            });
+
+            if (aiError) {
+              console.error('Error asking ChatGPT:', aiError);
+              break;
+            }
+
+            const answer = aiData?.answer || '';
+            const trimmedAnswer = trimToLastPunctuation(answer);
+
+            console.log(`[Polling] ChatGPT answer:`, trimmedAnswer);
+
+            // Step 3: Send the ChatGPT answer to the room
+            console.log(`[Polling] Sending answer to room ${room.id}`);
+            await supabase.functions.invoke('nomi-chatgpt-bridge', {
+              body: {
+                action: 'send-room-message',
+                roomId: room.id,
+                message: trimmedAnswer
+              }
+            });
+
+            // Step 4: Request Nomi to reply to the answer
+            console.log(`[Polling] Requesting ${nomi.name} to reply to answer`);
+            await supabase.functions.invoke('nomi-chatgpt-bridge', {
+              body: {
+                action: 'send-message',
+                nomiUuid: nomi.uuid,
+                roomId: room.id
+              }
+            });
+
+            const newMessage = {
+              nomiName: nomi.name,
+              text: messageText,
+              answer: trimmedAnswer,
+              timestamp: new Date().toISOString(),
+              nomi_uuid: nomi.uuid
+            };
+
+            console.log(`[Polling] Saving Q&A to database:`, newMessage);
+
+            // Save to DB only - realtime subscription will update UI
+            await saveMessageToDB(newMessage);
+          } else {
+            // No question asked, retry if attempts remain
+            if (attemptCount < MAX_ATTEMPTS) {
+              console.log(`[Polling] No question asked by ${nomi.name}, asking again...`);
+              // Send the prompt again
+              await supabase.functions.invoke('nomi-chatgpt-bridge', {
+                body: {
+                  action: 'send-room-message',
+                  roomId: room.id,
+                  message: "Ask me a question"
+                }
+              });
+            } else {
+              console.log(`[Polling] ${nomi.name} failed to ask a question after ${MAX_ATTEMPTS} attempts`);
+            }
+          }
         }
       } catch (error) {
         console.error(`Error polling nomi ${nomi.name}:`, error);
