@@ -520,7 +520,7 @@ serve(async (req) => {
         throw new Error('Groq API key not configured. Please add it in Settings.');
       }
 
-      console.log('Asking Groq (qwen/qwen3-32b):', question);
+      console.log('Asking Groq (llama-3.1-8b-instant):', question);
 
       const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
@@ -529,11 +529,11 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'qwen/qwen3-32b',
+          model: 'llama-3.1-8b-instant',
           messages: [
             {
               role: 'system',
-              content: 'You are a helpful AI assistant. Provide clear, concise answers.'
+              content: 'You are a helpful AI assistant. Provide clear, concise, short answers under 800 characters. Be direct and avoid unnecessary elaboration.'
             },
             {
               role: 'user',
@@ -550,7 +550,10 @@ serve(async (req) => {
       }
 
       const aiData = await aiResponse.json();
-      const answer = aiData.choices[0].message.content;
+      let answer = aiData.choices[0].message.content;
+
+      // Strip thinking tags if present
+      answer = answer.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 
       console.log('Groq answer:', answer);
 
