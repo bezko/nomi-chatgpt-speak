@@ -7,4 +7,4 @@ ALTER TABLE public.user_api_keys
 DROP COLUMN IF EXISTS openai_api_key;
 
 -- Add comment
-COMMENT ON COLUMN public.user_api_keys.groq_api_key IS 'Groq API key for AI responses using qwen2.5-32b model';
+COMMENT ON COLUMN public.user_api_keys.groq_api_key IS 'Groq API key for AI responses using qwen/qwen3-32b model';
