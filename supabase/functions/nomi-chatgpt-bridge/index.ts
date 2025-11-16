@@ -16,7 +16,7 @@ async function getUserApiKeys(userId: string) {
 
   const { data, error } = await supabase
     .from('user_api_keys')
-    .select('nomi_api_key, groq_api_key')
+    .select('nomi_api_key, groq_api_key, groq_model')
     .eq('user_id', userId)
     .maybeSingle();
 
@@ -31,6 +31,7 @@ async function getUserApiKeys(userId: string) {
   return {
     nomiApiKey: data.nomi_api_key,
     groqApiKey: data.groq_api_key,
+    groqModel: data.groq_model || 'llama-3.1-8b-instant',
   };
 }
 
@@ -67,12 +68,13 @@ serve(async (req) => {
       );
     }
 
-    // Get user's API keys
-    const { nomiApiKey, groqApiKey } = await getUserApiKeys(user.id);
+    // Get user's API keys and preferences
+    const { nomiApiKey, groqApiKey, groqModel } = await getUserApiKeys(user.id);
 
     const body = await req.json();
     const NOMI_API_KEY = nomiApiKey;
     const GROQ_API_KEY = groqApiKey;
+    const GROQ_MODEL = groqModel;
 
     // Handle list-nomis action
     if (body.action === 'list-nomis') {
@@ -520,7 +522,7 @@ serve(async (req) => {
         throw new Error('Groq API key not configured. Please add it in Settings.');
       }
 
-      console.log('Asking Groq (llama-3.1-8b-instant):', question);
+      console.log(`Asking Groq (${GROQ_MODEL}):`, question);
 
       const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
@@ -529,7 +531,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
+          model: GROQ_MODEL,
           messages: [
             {
               role: 'system',

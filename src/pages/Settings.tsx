@@ -7,10 +7,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/components/ui/use-toast";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Key, LogOut } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const GROQ_MODELS = [
+  { value: "llama-3.1-8b-instant", label: "Llama 3.1 8B (Recommended - Fast & Concise)" },
+  { value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (More Detailed)" },
+  { value: "openai/gpt-oss-20b", label: "GPT OSS 20B (Reasoning)" },
+  { value: "groq/compound", label: "Groq Compound (Advanced)" },
+];
 
 export default function Settings() {
   const [nomiApiKey, setNomiApiKey] = useState("");
   const [groqApiKey, setGroqApiKey] = useState("");
+  const [groqModel, setGroqModel] = useState("llama-3.1-8b-instant");
   const [loading, setLoading] = useState(false);
   const [fetchingKeys, setFetchingKeys] = useState(true);
   const [isFirstSetup, setIsFirstSetup] = useState(false);
@@ -24,7 +39,7 @@ export default function Settings() {
   const fetchApiKeys = async () => {
     setFetchingKeys(true);
     const { data: { user } } = await supabase.auth.getUser();
-    
+
     if (!user) {
       navigate("/auth");
       return;
@@ -44,13 +59,14 @@ export default function Settings() {
     if (data) {
       setNomiApiKey(data.nomi_api_key || "");
       setGroqApiKey(data.groq_api_key || "");
+      setGroqModel(data.groq_model || "llama-3.1-8b-instant");
       // If both keys exist, not first setup
       setIsFirstSetup(!data.nomi_api_key || !data.groq_api_key);
     } else {
       // No data means first setup
       setIsFirstSetup(true);
     }
-    
+
     setFetchingKeys(false);
   };
 
@@ -70,7 +86,7 @@ export default function Settings() {
     setLoading(true);
 
     const { data: { user } } = await supabase.auth.getUser();
-    
+
     if (!user) {
       navigate("/auth");
       return;
@@ -82,6 +98,7 @@ export default function Settings() {
         user_id: user.id,
         nomi_api_key: nomiApiKey,
         groq_api_key: groqApiKey,
+        groq_model: groqModel,
         updated_at: new Date().toISOString(),
       }, {
         onConflict: 'user_id'
@@ -98,7 +115,7 @@ export default function Settings() {
     } else {
       toast({
         title: "Success",
-        description: "API keys saved successfully",
+        description: "Settings saved successfully",
       });
       setIsFirstSetup(false);
       // Navigate to home after successful first setup
@@ -203,12 +220,31 @@ export default function Settings() {
                 </p>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="groq-model">LLM Model</Label>
+                <Select value={groqModel} onValueChange={setGroqModel}>
+                  <SelectTrigger id="groq-model">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GROQ_MODELS.map((model) => (
+                      <SelectItem key={model.value} value={model.value}>
+                        {model.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  Choose which Groq LLM model to use for generating responses
+                </p>
+              </div>
+
               <Button
                 type="submit"
                 className="w-full"
                 disabled={loading || !nomiApiKey.trim() || !groqApiKey.trim()}
               >
-                {loading ? "Saving..." : isFirstSetup ? "Continue to App" : "Save API Keys"}
+                {loading ? "Saving..." : isFirstSetup ? "Continue to App" : "Save Settings"}
               </Button>
             </form>
           </CardContent>

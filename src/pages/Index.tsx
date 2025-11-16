@@ -188,7 +188,10 @@ const Index = () => {
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Use a small delay to ensure DOM is updated
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 0);
   };
 
   const fetchNomis = async () => {
@@ -586,7 +589,8 @@ const Index = () => {
 
   // Autoscroll to bottom when new messages arrive (only if enabled and user is near bottom)
   useEffect(() => {
-    if (autoscrollEnabled && messages.length > 0 && isNearBottom()) {
+    if (autoscrollEnabled && messages.length > 0) {
+      // Always scroll if autoscroll is enabled, don't check isNearBottom
       scrollToBottom();
     }
   }, [messages, autoscrollEnabled]);
