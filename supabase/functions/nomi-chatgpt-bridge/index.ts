@@ -529,7 +529,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'qwen2.5-32b-instruct',
+          model: 'qwen3-32b',
           messages: [
             {
               role: 'system',
