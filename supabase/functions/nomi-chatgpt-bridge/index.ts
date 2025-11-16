@@ -520,7 +520,7 @@ serve(async (req) => {
         throw new Error('Groq API key not configured. Please add it in Settings.');
       }
 
-      console.log('Asking Groq (qwen3-32b):', question);
+      console.log('Asking Groq (qwen2.5-32b-instruct):', question);
 
       const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
@@ -529,7 +529,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'qwen3-32b',
+          model: 'qwen2.5-32b-instruct',
           messages: [
             {
               role: 'system',
