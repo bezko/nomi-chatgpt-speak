@@ -212,12 +212,13 @@ const Index = () => {
     return data?.rooms || [];
   };
 
-  const createRoom = async () => {
+  const createRoom = async (nomiUuids: string[] = []) => {
     const { data, error } = await supabase.functions.invoke('nomi-chatgpt-bridge', {
-      body: { 
+      body: {
         action: 'create-room',
         name: ROOM_NAME,
-        backchannelingEnabled: true
+        backchannelingEnabled: true,
+        nomiUuids
       }
     });
 
@@ -422,46 +423,31 @@ const Index = () => {
       let targetRoom = rooms.find((r: Room) => r.name === ROOM_NAME);
 
       if (!targetRoom) {
-        // Create room with first Nomi if available
+        // Create room with first Nomi if available (Nomi API requires at least 1 Nomi)
         const firstNomi = nomis.length > 0 ? nomis[0] : null;
-        const newRoom = await createRoom();
+
+        if (!firstNomi) {
+          toast({
+            title: "Error",
+            description: "No Nomis available. Please create or import a Nomi first.",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
+        }
+
+        // Create room with first Nomi already included
+        const newRoom = await createRoom([firstNomi.uuid]);
         targetRoom = {
           id: newRoom.id,
           name: newRoom.name,
-          nomis: []
+          nomis: [firstNomi]
         };
 
-        // Automatically add first Nomi to the new room
-        if (firstNomi) {
-          try {
-            await supabase.functions.invoke('nomi-chatgpt-bridge', {
-              body: {
-                action: 'add-nomi-to-room',
-                roomId: targetRoom.id,
-                nomiUuid: firstNomi.uuid
-              }
-            });
-
-            // Update room with first Nomi
-            targetRoom.nomis = [firstNomi];
-
-            toast({
-              title: "Room created",
-              description: `${ROOM_NAME} room created with ${firstNomi.name}`,
-            });
-          } catch (error) {
-            console.error('Error adding first Nomi:', error);
-            toast({
-              title: "Room created",
-              description: `${ROOM_NAME} room created successfully`,
-            });
-          }
-        } else {
-          toast({
-            title: "Room created",
-            description: `${ROOM_NAME} room created successfully`,
-          });
-        }
+        toast({
+          title: "Room created",
+          description: `${ROOM_NAME} room created with ${firstNomi.name}`,
+        });
       }
 
       setRoom(targetRoom);
