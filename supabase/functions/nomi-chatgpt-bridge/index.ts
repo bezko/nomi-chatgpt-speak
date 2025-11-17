@@ -148,10 +148,21 @@ serve(async (req) => {
 
     // Handle create-room action
     if (body.action === 'create-room') {
-      const { name, backchannelingEnabled } = body;
-      
-      console.log(`Creating room "${name}" with backchanneling: ${backchannelingEnabled}`);
-      
+      const { name, backchannelingEnabled, nomiUuids = [] } = body;
+
+      // Nomi API requires at least one Nomi UUID in the array
+      if (!nomiUuids || nomiUuids.length === 0) {
+        return new Response(
+          JSON.stringify({
+            error: 'At least one Nomi UUID is required to create a room',
+            code: 'no_nomis'
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log(`Creating room "${name}" with ${nomiUuids.length} Nomi(s) and backchanneling: ${backchannelingEnabled}`);
+
       const createResponse = await fetch('https://api.nomi.ai/v1/rooms', {
         method: 'POST',
         headers: {
@@ -161,7 +172,7 @@ serve(async (req) => {
         body: JSON.stringify({
           name,
           backchannelingEnabled,
-          nomiUuids: [],
+          nomiUuids,
           note: 'Inquisitorium room for automated Q&A'
         }),
       });
